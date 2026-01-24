@@ -252,7 +252,16 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
             range: { type: 'string', description: 'Range to write (e.g., "Sheet1!A1")' },
-            values: { type: 'array', description: 'Array of rows to write' },
+            values: {
+              type: 'array',
+              description: 'Array of rows to write (e.g., [["A1", "B1"], ["A2", "B2"]])',
+              items: {
+                type: 'array',
+                items: {
+                  type: 'string'
+                }
+              }
+            },
             userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
           },
           required: ['spreadsheetId', 'range', 'values']
