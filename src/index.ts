@@ -73,7 +73,8 @@ app.get('/oauth/start', (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    state: userId
+    state: userId,
+    prompt: 'consent' // Force fresh login every time
   });
   res.redirect(authUrl);
 });
@@ -89,6 +90,22 @@ app.get('/oauth/callback', async (req, res) => {
   } catch (error) {
     console.error('OAuth callback error:', error);
     res.status(500).send('❌ Authentication failed: ' + error);
+  }
+});
+
+app.get('/oauth/logout', async (req, res) => {
+  const userId = req.query.userId as string || 'default-user';
+  try {
+    const { error } = await supabase
+      .from('oauth_tokens')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    res.send('✅ Logged out successfully! Your tokens have been removed. Visit /oauth/start to authenticate again.');
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).send('❌ Logout failed: ' + error);
   }
 });
 
