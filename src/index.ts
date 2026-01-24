@@ -7,14 +7,18 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { google } from 'googleapis';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Store user OAuth tokens (in production, use a database)
-const userTokens = new Map<string, any>();
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_KEY!
+);
 
 // Google OAuth2 Client
 const oauth2Client = new google.auth.OAuth2(
@@ -36,6 +40,33 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets'
 ];
 
+// Helper functions for Supabase token storage
+async function saveTokens(userId: string, tokens: any) {
+  const { error } = await supabase
+    .from('oauth_tokens')
+    .upsert({ user_id: userId, tokens }, { onConflict: 'user_id' });
+
+  if (error) {
+    console.error('Error saving tokens:', error);
+    throw error;
+  }
+}
+
+async function getTokens(userId: string) {
+  const { data, error } = await supabase
+    .from('oauth_tokens')
+    .select('tokens')
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error getting tokens:', error);
+    return null;
+  }
+
+  return data?.tokens;
+}
+
 // OAuth routes
 app.get('/oauth/start', (req, res) => {
   const userId = req.query.userId as string || 'default-user';
@@ -53,15 +84,16 @@ app.get('/oauth/callback', async (req, res) => {
 
   try {
     const { tokens } = await oauth2Client.getToken(code);
-    userTokens.set(userId, tokens);
-    res.send('✅ Authentication successful! You can close this window and return to n8n.');
+    await saveTokens(userId, tokens);
+    res.send('✅ Authentication successful! Your tokens are now saved to Supabase. You can close this window and return to n8n.');
   } catch (error) {
+    console.error('OAuth callback error:', error);
     res.status(500).send('❌ Authentication failed: ' + error);
   }
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'Google Workspace MCP Server' });
+  res.json({ status: 'ok', service: 'Google Workspace MCP Server', storage: 'Supabase' });
 });
 
 // MCP Server Setup
@@ -78,8 +110,8 @@ const mcpServer = new Server(
 );
 
 // Helper function to get authenticated client
-function getAuthenticatedClient(userId: string = 'default-user') {
-  const tokens = userTokens.get(userId);
+async function getAuthenticatedClient(userId: string = 'default-user') {
+  const tokens = await getTokens(userId);
   if (!tokens) {
     throw new Error('User not authenticated. Please visit /oauth/start?userId=' + userId);
   }
@@ -277,7 +309,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   const userId = (args as any).userId || 'default-user';
 
   try {
-    const auth = getAuthenticatedClient(userId);
+    const auth = await getAuthenticatedClient(userId);
 
     switch (name) {
       // Gmail handlers
@@ -492,4 +524,5 @@ app.listen(PORT, () => {
   console.log(`📍 Health check: http://localhost:${PORT}/health`);
   console.log(`🔐 OAuth start: http://localhost:${PORT}/oauth/start`);
   console.log(`📡 MCP endpoint for n8n: http://localhost:${PORT}/mcp`);
+  console.log(`💾 Token storage: Supabase`);
 });
