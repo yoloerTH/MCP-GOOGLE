@@ -39,8 +39,9 @@ const SCOPES = [
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/contacts',
-  'https://www.googleapis.com/auth/tasks',
-  'https://www.googleapis.com/auth/keep'
+  'https://www.googleapis.com/auth/tasks'
+  // Note: Google Keep API exists in googleapis but has no public OAuth scope
+  // Keep API is restricted/internal only - use Google Tasks as alternative
 ];
 
 // Helper functions for Supabase token storage
@@ -1063,117 +1064,39 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Google Keep handlers
-      case 'keep_create_note': {
-        const keep = google.keep({ version: 'v1', auth });
-        const response = await keep.notes.create({
-          requestBody: {
-            title: (args as any).title || '',
-            body: {
-              text: {
-                text: (args as any).content
-              }
-            }
-          }
-        });
-        return {
-          content: [{ type: 'text', text: `Note created! ID: ${response.data.name}` }]
-        };
-      }
-
-      case 'keep_search_notes': {
-        const keep = google.keep({ version: 'v1', auth });
-        const response = await keep.notes.list({
-          filter: (args as any).query
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.notes, null, 2) }]
-        };
-      }
-
-      case 'keep_update_note': {
-        const keep = google.keep({ version: 'v1', auth });
-
-        // First get the note to get current data
-        const existingNote = await keep.notes.get({
-          name: (args as any).noteId
-        });
-
-        const updateBody: any = {
-          name: (args as any).noteId
-        };
-
-        if ((args as any).title !== undefined) {
-          updateBody.title = (args as any).title;
-        } else {
-          updateBody.title = existingNote.data.title;
-        }
-
-        if ((args as any).content !== undefined) {
-          updateBody.body = {
-            text: {
-              text: (args as any).content
-            }
-          };
-        } else {
-          updateBody.body = existingNote.data.body;
-        }
-
-        const response = await keep.notes.create({
-          requestBody: updateBody
-        });
-
-        // Delete old note
-        await keep.notes.delete({
-          name: (args as any).noteId
-        });
-
-        return {
-          content: [{ type: 'text', text: 'Note updated successfully!' }]
-        };
-      }
-
-      case 'keep_delete_note': {
-        const keep = google.keep({ version: 'v1', auth });
-        await keep.notes.delete({
-          name: (args as any).noteId
-        });
-        return {
-          content: [{ type: 'text', text: 'Note deleted successfully!' }]
-        };
-      }
-
+      // Note: Keep API exists in googleapis but has NO public OAuth scope
+      // It's restricted/internal only - not available for public use
+      case 'keep_create_note':
+      case 'keep_search_notes':
+      case 'keep_update_note':
+      case 'keep_delete_note':
       case 'keep_set_reminder': {
-        const keep = google.keep({ version: 'v1', auth });
-
-        // Get existing note
-        const existingNote = await keep.notes.get({
-          name: (args as any).noteId
-        });
-
-        // Create updated note with reminder
-        const updateBody: any = {
-          ...existingNote.data,
-          body: existingNote.data.body,
-          attachments: [
-            ...(existingNote.data.attachments || []),
-            {
-              mimeType: ['application/vnd.google.apps.reminder'],
-              // Keep API reminders structure - this may need adjustment based on actual API
-            }
-          ]
-        };
-
-        const response = await keep.notes.create({
-          requestBody: updateBody
-        });
-
-        // Delete old note
-        await keep.notes.delete({
-          name: (args as any).noteId
-        });
-
         return {
-          content: [{ type: 'text', text: `Reminder set for ${(args as any).reminderTime}` }]
+          content: [{
+            type: 'text',
+            text: `❌ Google Keep API is not publicly available
+
+While the Keep API exists in googleapis, it has no public OAuth scope and is restricted to internal Google use only.
+
+✅ **Use these alternatives instead:**
+
+1. **Google Tasks** (best alternative):
+   - Similar to Keep for notes/to-dos
+   - Fully available: tasks_create, tasks_list, tasks_update, tasks_complete, tasks_delete
+   - Example: "Create a task: Buy groceries by Friday"
+
+2. **Google Docs** (for longer notes):
+   - Create documents for detailed notes
+   - Available: docs_create, docs_read, docs_append, docs_delete
+   - Example: "Create a doc called Meeting Notes"
+
+3. **Calendar with reminders**:
+   - Use calendar events with reminders
+   - Available: calendar_create_event with reminders
+
+Would you like me to create a Task or Doc instead?`
+          }],
+          isError: false  // Not an error, just unavailable
         };
       }
 
