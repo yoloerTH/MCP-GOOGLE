@@ -867,6 +867,25 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 // ========================================
+// HELPER FUNCTIONS
+// ========================================
+
+// Ensure text is always a valid string (prevents MCP -32602 errors)
+function safeStringify(data: any): string {
+  if (data === null || data === undefined) {
+    return 'No data returned';
+  }
+  if (typeof data === 'string') {
+    return data;
+  }
+  try {
+    return JSON.stringify(data, null, 2);
+  } catch (error) {
+    return String(data);
+  }
+}
+
+// ========================================
 // TOOL HANDLERS
 // ========================================
 
@@ -887,7 +906,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           maxResults: (args as any).maxResults || 10
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data) }]
         };
       }
 
@@ -917,7 +936,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           id: (args as any).messageId
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data) }]
         };
       }
 
@@ -925,7 +944,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'drive_search': {
         const files = await smartDriveSearch(auth, (args as any).query, (args as any).maxResults || 10);
 
-        if (files.length === 0) {
+        if (!files || files.length === 0) {
           return {
             content: [{
               type: 'text',
@@ -935,7 +954,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return {
-          content: [{ type: 'text', text: JSON.stringify(files, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(files) }]
         };
       }
 
@@ -948,7 +967,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
             alt: 'media'
           });
           return {
-            content: [{ type: 'text', text: JSON.stringify(response.data) }]
+            content: [{ type: 'text', text: safeStringify(response.data) }]
           };
         } catch (error: any) {
           if (error.code === 404) {
@@ -972,7 +991,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           fields: 'id, name, webViewLink'
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data) }]
         };
       }
 
@@ -987,7 +1006,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: 'startTime'
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.items, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data.items) }]
         };
       }
 
@@ -1063,7 +1082,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
             range: (args as any).range || 'Sheet1'
           });
           return {
-            content: [{ type: 'text', text: JSON.stringify(response.data.values, null, 2) }]
+            content: [{ type: 'text', text: safeStringify(response.data.values || []) }]
           };
         } catch (error: any) {
           if (error.code === 404) {
@@ -1159,7 +1178,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           pageSize: (args as any).maxResults || 10
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.results, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data.results) }]
         };
       }
 
@@ -1244,7 +1263,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           maxResults: (args as any).maxResults || 100
         });
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.items, null, 2) }]
+          content: [{ type: 'text', text: safeStringify(response.data.items) }]
         };
       }
 
@@ -1573,11 +1592,11 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           orderBy: 'startTime'
         });
 
-        const meetingsWithLinks = response.data.items?.filter(event => event.hangoutLink);
+        const meetingsWithLinks = response.data.items?.filter(event => event.hangoutLink) || [];
         return {
           content: [{
             type: 'text',
-            text: JSON.stringify(meetingsWithLinks, null, 2)
+            text: safeStringify(meetingsWithLinks)
           }]
         };
       }
