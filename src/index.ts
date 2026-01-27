@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
@@ -11,8 +13,14 @@ import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -44,7 +52,43 @@ const SCOPES = [
   // Keep API is restricted/internal only - use Google Tasks as alternative
 ];
 
-// Helper functions for Supabase token storage
+// ========================================
+// CUSTOM ERROR CLASSES
+// ========================================
+
+class AuthenticationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
+
+class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotFoundError';
+  }
+}
+
+class PermissionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermissionError';
+  }
+}
+
+class TemporaryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TemporaryError';
+  }
+}
+
+// ========================================
+// ENHANCED TOKEN MANAGEMENT
+// ========================================
+
+// Helper function to save tokens
 async function saveTokens(userId: string, tokens: any) {
   const { error } = await supabase
     .from('oauth_tokens')
@@ -56,22 +100,222 @@ async function saveTokens(userId: string, tokens: any) {
   }
 }
 
-async function getTokens(userId: string) {
-  const { data, error } = await supabase
-    .from('oauth_tokens')
-    .select('tokens')
-    .eq('user_id', userId)
-    .single();
+// Enhanced token retrieval with retry logic and proper error classification
+async function getTokens(userId: string, retries = 3): Promise<any> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const { data, error } = await supabase
+        .from('oauth_tokens')
+        .select('tokens')
+        .eq('user_id', userId)
+        .single();
 
-  if (error) {
-    console.error('Error getting tokens:', error);
-    return null;
+      if (error) {
+        // PGRST116 = Row not found (user truly not authenticated)
+        if (error.code === 'PGRST116') {
+          console.log(`User ${userId} not found in database (not authenticated)`);
+          return null;
+        }
+
+        // Network/timeout error - retry with exponential backoff
+        console.warn(`Supabase error on attempt ${attempt}/${retries}:`, error.message);
+
+        if (attempt === retries) {
+          throw new TemporaryError('Database temporarily unavailable. Please try again in a moment.');
+        }
+
+        // Exponential backoff: 1s, 2s, 3s
+        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        continue;
+      }
+
+      // Success - return tokens
+      console.log(`✅ Successfully retrieved tokens for user ${userId}`);
+      return data?.tokens;
+
+    } catch (err: any) {
+      console.error(`Unexpected error retrieving tokens (attempt ${attempt}/${retries}):`, err);
+
+      if (attempt === retries) {
+        throw new TemporaryError('Unable to retrieve authentication tokens. Please try again.');
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
   }
 
-  return data?.tokens;
+  return null;
 }
 
-// OAuth routes
+// Enhanced authentication with token refresh
+async function getAuthenticatedClient(userId: string = 'default-user') {
+  const tokens = await getTokens(userId);
+
+  if (!tokens) {
+    const authUrl = `${process.env.GOOGLE_REDIRECT_URI?.replace('/oauth/callback', '/oauth/start')}?userId=${userId}`;
+    throw new AuthenticationError(`User not authenticated. Please visit: ${authUrl}`);
+  }
+
+  const client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+
+  client.setCredentials(tokens);
+
+  // Check if access token is expired and refresh if needed
+  if (tokens.expiry_date && tokens.expiry_date < Date.now()) {
+    console.log(`🔄 Access token expired for user ${userId}, refreshing...`);
+
+    try {
+      const { credentials } = await client.refreshAccessToken();
+      console.log(`✅ Token refreshed successfully for user ${userId}`);
+
+      // Save refreshed tokens
+      await saveTokens(userId, credentials);
+      client.setCredentials(credentials);
+    } catch (refreshError: any) {
+      console.error('Token refresh failed:', refreshError.message);
+      const authUrl = `${process.env.GOOGLE_REDIRECT_URI?.replace('/oauth/callback', '/oauth/start')}?userId=${userId}`;
+      throw new AuthenticationError(`Token expired and refresh failed. Please re-authenticate at: ${authUrl}`);
+    }
+  }
+
+  return client;
+}
+
+// ========================================
+// SMART SEARCH HELPER
+// ========================================
+
+// Smart Drive search with multiple fallback strategies
+async function smartDriveSearch(auth: any, query: string, maxResults: number = 10) {
+  const drive = google.drive({ version: 'v3', auth });
+
+  console.log(`🔍 Starting smart search with query: "${query}"`);
+
+  // Strategy 1: Try the original query as-is
+  try {
+    const results = await drive.files.list({
+      q: query,
+      pageSize: maxResults,
+      fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+    });
+
+    if (results.data.files && results.data.files.length > 0) {
+      console.log(`✅ Strategy 1 (exact query) found ${results.data.files.length} results`);
+      return results.data.files;
+    }
+  } catch (error: any) {
+    console.warn('Strategy 1 failed:', error.message);
+  }
+
+  // Strategy 2: Extract search term and try case-insensitive contains
+  const searchTermMatch = query.match(/name contains ['"](.+?)['"]/i);
+  if (searchTermMatch) {
+    const term = searchTermMatch[1];
+    console.log(`📝 Extracted search term: "${term}"`);
+
+    // Try lowercase
+    try {
+      const results = await drive.files.list({
+        q: `name contains '${term.toLowerCase()}'`,
+        pageSize: maxResults,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+      });
+
+      if (results.data.files && results.data.files.length > 0) {
+        console.log(`✅ Strategy 2 (lowercase) found ${results.data.files.length} results`);
+        return results.data.files;
+      }
+    } catch (error: any) {
+      console.warn('Strategy 2 (lowercase) failed:', error.message);
+    }
+
+    // Try uppercase
+    try {
+      const results = await drive.files.list({
+        q: `name contains '${term.toUpperCase()}'`,
+        pageSize: maxResults,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+      });
+
+      if (results.data.files && results.data.files.length > 0) {
+        console.log(`✅ Strategy 3 (uppercase) found ${results.data.files.length} results`);
+        return results.data.files;
+      }
+    } catch (error: any) {
+      console.warn('Strategy 3 (uppercase) failed:', error.message);
+    }
+
+    // Strategy 3: Try partial match (first 4+ characters)
+    if (term.length >= 4) {
+      try {
+        const partialTerm = term.substring(0, Math.max(4, Math.floor(term.length * 0.6)));
+        const results = await drive.files.list({
+          q: `name contains '${partialTerm.toLowerCase()}'`,
+          pageSize: maxResults * 3, // Get more results for fuzzy matching
+          fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+        });
+
+        // Filter results that contain the original search term (case-insensitive)
+        if (results.data.files) {
+          const filtered = results.data.files.filter(file =>
+            file.name?.toLowerCase().includes(term.toLowerCase())
+          );
+
+          if (filtered.length > 0) {
+            console.log(`✅ Strategy 4 (partial match) found ${filtered.length} results`);
+            return filtered.slice(0, maxResults);
+          }
+        }
+      } catch (error: any) {
+        console.warn('Strategy 4 (partial) failed:', error.message);
+      }
+    }
+
+    // Strategy 4: Try searching in Google Docs specifically
+    try {
+      const results = await drive.files.list({
+        q: `name contains '${term.toLowerCase()}' and mimeType='application/vnd.google-apps.document'`,
+        pageSize: maxResults,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+      });
+
+      if (results.data.files && results.data.files.length > 0) {
+        console.log(`✅ Strategy 5 (Docs-specific) found ${results.data.files.length} results`);
+        return results.data.files;
+      }
+    } catch (error: any) {
+      console.warn('Strategy 5 (Docs) failed:', error.message);
+    }
+
+    // Strategy 5: Try searching in Google Sheets
+    try {
+      const results = await drive.files.list({
+        q: `name contains '${term.toLowerCase()}' and mimeType='application/vnd.google-apps.spreadsheet'`,
+        pageSize: maxResults,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+      });
+
+      if (results.data.files && results.data.files.length > 0) {
+        console.log(`✅ Strategy 6 (Sheets-specific) found ${results.data.files.length} results`);
+        return results.data.files;
+      }
+    } catch (error: any) {
+      console.warn('Strategy 6 (Sheets) failed:', error.message);
+    }
+  }
+
+  console.log('❌ All search strategies exhausted - no results found');
+  return [];
+}
+
+// ========================================
+// OAUTH ROUTES
+// ========================================
+
 app.get('/oauth/start', (req, res) => {
   const userId = req.query.userId as string || 'default-user';
   const authUrl = oauth2Client.generateAuthUrl({
@@ -117,7 +361,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Google Workspace MCP Server', storage: 'Supabase' });
 });
 
-// MCP Server Setup
+// ========================================
+// MCP SERVER SETUP
+// ========================================
+
 const mcpServer = new Server(
   {
     name: 'google-workspace-mcp',
@@ -129,21 +376,6 @@ const mcpServer = new Server(
     },
   }
 );
-
-// Helper function to get authenticated client
-async function getAuthenticatedClient(userId: string = 'default-user') {
-  const tokens = await getTokens(userId);
-  if (!tokens) {
-    throw new Error('User not authenticated. Please visit /oauth/start?userId=' + userId);
-  }
-  const client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
-  client.setCredentials(tokens);
-  return client;
-}
 
 // Define tools
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -701,7 +933,10 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Handle tool calls
+// ========================================
+// TOOL HANDLERS
+// ========================================
+
 mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const userId = (args as any).userId || 'default-user';
@@ -753,28 +988,41 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      // Google Drive handlers
+      // Google Drive handlers - USE SMART SEARCH
       case 'drive_search': {
-        const drive = google.drive({ version: 'v3', auth });
-        const response = await drive.files.list({
-          q: (args as any).query,
-          pageSize: (args as any).maxResults || 10,
-          fields: 'files(id, name, mimeType, modifiedTime, webViewLink)'
-        });
+        const files = await smartDriveSearch(auth, (args as any).query, (args as any).maxResults || 10);
+
+        if (files.length === 0) {
+          return {
+            content: [{
+              type: 'text',
+              text: 'No files found matching your search. The smart search tried multiple strategies including case-insensitive and partial matching.'
+            }]
+          };
+        }
+
         return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.files, null, 2) }]
+          content: [{ type: 'text', text: JSON.stringify(files, null, 2) }]
         };
       }
 
       case 'drive_read': {
         const drive = google.drive({ version: 'v3', auth });
-        const response = await drive.files.get({
-          fileId: (args as any).fileId,
-          alt: 'media'
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(response.data) }]
-        };
+
+        try {
+          const response = await drive.files.get({
+            fileId: (args as any).fileId,
+            alt: 'media'
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(response.data) }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`File with ID "${(args as any).fileId}" not found. It may have been deleted or you don't have access.`);
+          }
+          throw error;
+        }
       }
 
       case 'drive_create': {
@@ -829,12 +1077,20 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Google Docs handlers
       case 'docs_read': {
         const docs = google.docs({ version: 'v1', auth });
-        const response = await docs.documents.get({
-          documentId: (args as any).documentId
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
-        };
+
+        try {
+          const response = await docs.documents.get({
+            documentId: (args as any).documentId
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(response.data, null, 2) }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Document with ID "${(args as any).documentId}" not found. It may have been deleted or you don't have access.`);
+          }
+          throw error;
+        }
       }
 
       case 'docs_create': {
@@ -867,13 +1123,21 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Google Sheets handlers
       case 'sheets_read': {
         const sheets = google.sheets({ version: 'v4', auth });
-        const response = await sheets.spreadsheets.values.get({
-          spreadsheetId: (args as any).spreadsheetId,
-          range: (args as any).range || 'Sheet1'
-        });
-        return {
-          content: [{ type: 'text', text: JSON.stringify(response.data.values, null, 2) }]
-        };
+
+        try {
+          const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: (args as any).spreadsheetId,
+            range: (args as any).range || 'Sheet1'
+          });
+          return {
+            content: [{ type: 'text', text: JSON.stringify(response.data.values, null, 2) }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Spreadsheet with ID "${(args as any).spreadsheetId}" not found. It may have been deleted or you don't have access.`);
+          }
+          throw error;
+        }
       }
 
       case 'sheets_write': {
@@ -902,25 +1166,40 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         if ((args as any).startTime) updateBody.start = { dateTime: (args as any).startTime };
         if ((args as any).endTime) updateBody.end = { dateTime: (args as any).endTime };
 
-        const response = await calendar.events.patch({
-          calendarId: 'primary',
-          eventId: (args as any).eventId,
-          requestBody: updateBody
-        });
-        return {
-          content: [{ type: 'text', text: `Event updated successfully! Link: ${response.data.htmlLink}` }]
-        };
+        try {
+          const response = await calendar.events.patch({
+            calendarId: 'primary',
+            eventId: (args as any).eventId,
+            requestBody: updateBody
+          });
+          return {
+            content: [{ type: 'text', text: `Event updated successfully! Link: ${response.data.htmlLink}` }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Calendar event with ID "${(args as any).eventId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'calendar_delete_event': {
         const calendar = google.calendar({ version: 'v3', auth });
-        await calendar.events.delete({
-          calendarId: 'primary',
-          eventId: (args as any).eventId
-        });
-        return {
-          content: [{ type: 'text', text: 'Event deleted successfully!' }]
-        };
+
+        try {
+          await calendar.events.delete({
+            calendarId: 'primary',
+            eventId: (args as any).eventId
+          });
+          return {
+            content: [{ type: 'text', text: 'Event deleted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Calendar event with ID "${(args as any).eventId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       // Google Contacts handlers
@@ -954,44 +1233,59 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'contacts_update': {
         const people = google.people({ version: 'v1', auth });
 
-        // First get the contact to get the etag
-        const existing = await people.people.get({
-          resourceName: (args as any).resourceName,
-          personFields: 'names,emailAddresses,phoneNumbers'
-        });
+        try {
+          // First get the contact to get the etag
+          const existing = await people.people.get({
+            resourceName: (args as any).resourceName,
+            personFields: 'names,emailAddresses,phoneNumbers'
+          });
 
-        const updateBody: any = { etag: existing.data.etag };
-        if ((args as any).firstName || (args as any).lastName) {
-          updateBody.names = [{
-            givenName: (args as any).firstName,
-            familyName: (args as any).lastName
-          }];
-        }
-        if ((args as any).email) {
-          updateBody.emailAddresses = [{ value: (args as any).email }];
-        }
-        if ((args as any).phone) {
-          updateBody.phoneNumbers = [{ value: (args as any).phone }];
-        }
+          const updateBody: any = { etag: existing.data.etag };
+          if ((args as any).firstName || (args as any).lastName) {
+            updateBody.names = [{
+              givenName: (args as any).firstName,
+              familyName: (args as any).lastName
+            }];
+          }
+          if ((args as any).email) {
+            updateBody.emailAddresses = [{ value: (args as any).email }];
+          }
+          if ((args as any).phone) {
+            updateBody.phoneNumbers = [{ value: (args as any).phone }];
+          }
 
-        const response = await people.people.updateContact({
-          resourceName: (args as any).resourceName,
-          updatePersonFields: 'names,emailAddresses,phoneNumbers',
-          requestBody: updateBody
-        });
-        return {
-          content: [{ type: 'text', text: 'Contact updated successfully!' }]
-        };
+          const response = await people.people.updateContact({
+            resourceName: (args as any).resourceName,
+            updatePersonFields: 'names,emailAddresses,phoneNumbers',
+            requestBody: updateBody
+          });
+          return {
+            content: [{ type: 'text', text: 'Contact updated successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Contact with resource name "${(args as any).resourceName}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'contacts_delete': {
         const people = google.people({ version: 'v1', auth });
-        await people.people.deleteContact({
-          resourceName: (args as any).resourceName
-        });
-        return {
-          content: [{ type: 'text', text: 'Contact deleted successfully!' }]
-        };
+
+        try {
+          await people.people.deleteContact({
+            resourceName: (args as any).resourceName
+          });
+          return {
+            content: [{ type: 'text', text: 'Contact deleted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Contact with resource name "${(args as any).resourceName}" not found.`);
+          }
+          throw error;
+        }
       }
 
       // Google Tasks handlers
@@ -1028,39 +1322,62 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         if ((args as any).notes) updateBody.notes = (args as any).notes;
         if ((args as any).due) updateBody.due = (args as any).due;
 
-        const response = await tasks.tasks.patch({
-          tasklist: (args as any).taskListId || '@default',
-          task: (args as any).taskId,
-          requestBody: updateBody
-        });
-        return {
-          content: [{ type: 'text', text: 'Task updated successfully!' }]
-        };
+        try {
+          const response = await tasks.tasks.patch({
+            tasklist: (args as any).taskListId || '@default',
+            task: (args as any).taskId,
+            requestBody: updateBody
+          });
+          return {
+            content: [{ type: 'text', text: 'Task updated successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Task with ID "${(args as any).taskId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'tasks_complete': {
         const tasks = google.tasks({ version: 'v1', auth });
-        await tasks.tasks.patch({
-          tasklist: (args as any).taskListId || '@default',
-          task: (args as any).taskId,
-          requestBody: {
-            status: 'completed'
+
+        try {
+          await tasks.tasks.patch({
+            tasklist: (args as any).taskListId || '@default',
+            task: (args as any).taskId,
+            requestBody: {
+              status: 'completed'
+            }
+          });
+          return {
+            content: [{ type: 'text', text: 'Task marked as completed!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Task with ID "${(args as any).taskId}" not found.`);
           }
-        });
-        return {
-          content: [{ type: 'text', text: 'Task marked as completed!' }]
-        };
+          throw error;
+        }
       }
 
       case 'tasks_delete': {
         const tasks = google.tasks({ version: 'v1', auth });
-        await tasks.tasks.delete({
-          tasklist: (args as any).taskListId || '@default',
-          task: (args as any).taskId
-        });
-        return {
-          content: [{ type: 'text', text: 'Task deleted successfully!' }]
-        };
+
+        try {
+          await tasks.tasks.delete({
+            tasklist: (args as any).taskListId || '@default',
+            task: (args as any).taskId
+          });
+          return {
+            content: [{ type: 'text', text: 'Task deleted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Task with ID "${(args as any).taskId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       // Google Keep handlers
@@ -1103,77 +1420,119 @@ Would you like me to create a Task or Doc instead?`
       // Drive Extended handlers
       case 'drive_delete': {
         const drive = google.drive({ version: 'v3', auth });
-        await drive.files.delete({
-          fileId: (args as any).fileId
-        });
-        return {
-          content: [{ type: 'text', text: 'File deleted successfully!' }]
-        };
+
+        try {
+          await drive.files.delete({
+            fileId: (args as any).fileId
+          });
+          return {
+            content: [{ type: 'text', text: 'File deleted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`File with ID "${(args as any).fileId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'drive_rename': {
         const drive = google.drive({ version: 'v3', auth });
-        const response = await drive.files.update({
-          fileId: (args as any).fileId,
-          requestBody: {
-            name: (args as any).newName
+
+        try {
+          const response = await drive.files.update({
+            fileId: (args as any).fileId,
+            requestBody: {
+              name: (args as any).newName
+            }
+          });
+          return {
+            content: [{ type: 'text', text: `File renamed to: ${response.data.name}` }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`File with ID "${(args as any).fileId}" not found.`);
           }
-        });
-        return {
-          content: [{ type: 'text', text: `File renamed to: ${response.data.name}` }]
-        };
+          throw error;
+        }
       }
 
       case 'drive_change_permissions': {
         const drive = google.drive({ version: 'v3', auth });
-        const response = await drive.permissions.create({
-          fileId: (args as any).fileId,
-          requestBody: {
-            type: 'user',
-            role: (args as any).role,
-            emailAddress: (args as any).email
+
+        try {
+          const response = await drive.permissions.create({
+            fileId: (args as any).fileId,
+            requestBody: {
+              type: 'user',
+              role: (args as any).role,
+              emailAddress: (args as any).email
+            }
+          });
+          return {
+            content: [{ type: 'text', text: `Shared with ${(args as any).email} as ${(args as any).role}` }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`File with ID "${(args as any).fileId}" not found.`);
           }
-        });
-        return {
-          content: [{ type: 'text', text: `Shared with ${(args as any).email} as ${(args as any).role}` }]
-        };
+          if (error.code === 403) {
+            throw new PermissionError(`You don't have permission to share this file.`);
+          }
+          throw error;
+        }
       }
 
       // Docs Extended handlers
       case 'docs_delete': {
         const drive = google.drive({ version: 'v3', auth });
-        await drive.files.delete({
-          fileId: (args as any).documentId
-        });
-        return {
-          content: [{ type: 'text', text: 'Document deleted successfully!' }]
-        };
+
+        try {
+          await drive.files.delete({
+            fileId: (args as any).documentId
+          });
+          return {
+            content: [{ type: 'text', text: 'Document deleted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Document with ID "${(args as any).documentId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'docs_append': {
         const docs = google.docs({ version: 'v1', auth });
 
-        // First, get the document to find the end index
-        const doc = await docs.documents.get({
-          documentId: (args as any).documentId
-        });
+        try {
+          // First, get the document to find the end index
+          const doc = await docs.documents.get({
+            documentId: (args as any).documentId
+          });
 
-        const endIndex = doc.data.body?.content?.slice(-1)[0]?.endIndex || 1;
+          const endIndex = doc.data.body?.content?.slice(-1)[0]?.endIndex || 1;
 
-        await docs.documents.batchUpdate({
-          documentId: (args as any).documentId,
-          requestBody: {
-            requests: [{
-              insertText: {
-                location: { index: endIndex - 1 },
-                text: '\n' + (args as any).content
-              }
-            }]
+          await docs.documents.batchUpdate({
+            documentId: (args as any).documentId,
+            requestBody: {
+              requests: [{
+                insertText: {
+                  location: { index: endIndex - 1 },
+                  text: '\n' + (args as any).content
+                }
+              }]
+            }
+          });
+          return {
+            content: [{ type: 'text', text: 'Content appended to document!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Document with ID "${(args as any).documentId}" not found.`);
           }
-        });
-        return {
-          content: [{ type: 'text', text: 'Content appended to document!' }]
-        };
+          throw error;
+        }
       }
 
       case 'docs_format_text': {
@@ -1221,13 +1580,20 @@ Would you like me to create a Task or Doc instead?`
           });
         }
 
-        await docs.documents.batchUpdate({
-          documentId: (args as any).documentId,
-          requestBody: { requests }
-        });
-        return {
-          content: [{ type: 'text', text: 'Text formatted successfully!' }]
-        };
+        try {
+          await docs.documents.batchUpdate({
+            documentId: (args as any).documentId,
+            requestBody: { requests }
+          });
+          return {
+            content: [{ type: 'text', text: 'Text formatted successfully!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Document with ID "${(args as any).documentId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       // Google Meet handlers (via Calendar with Meet links)
@@ -1259,30 +1625,46 @@ Would you like me to create a Task or Doc instead?`
 
       case 'meet_get_link': {
         const calendar = google.calendar({ version: 'v3', auth });
-        const response = await calendar.events.get({
-          calendarId: 'primary',
-          eventId: (args as any).eventId
-        });
-        return {
-          content: [{
-            type: 'text',
-            text: response.data.hangoutLink
-              ? `Meet link: ${response.data.hangoutLink}`
-              : 'No Google Meet link found for this event'
-          }]
-        };
+
+        try {
+          const response = await calendar.events.get({
+            calendarId: 'primary',
+            eventId: (args as any).eventId
+          });
+          return {
+            content: [{
+              type: 'text',
+              text: response.data.hangoutLink
+                ? `Meet link: ${response.data.hangoutLink}`
+                : 'No Google Meet link found for this event'
+            }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Calendar event with ID "${(args as any).eventId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'meet_cancel': {
         const calendar = google.calendar({ version: 'v3', auth });
-        await calendar.events.delete({
-          calendarId: 'primary',
-          eventId: (args as any).eventId,
-          sendUpdates: 'all'
-        });
-        return {
-          content: [{ type: 'text', text: 'Google Meet meeting cancelled and attendees notified!' }]
-        };
+
+        try {
+          await calendar.events.delete({
+            calendarId: 'primary',
+            eventId: (args as any).eventId,
+            sendUpdates: 'all'
+          });
+          return {
+            content: [{ type: 'text', text: 'Google Meet meeting cancelled and attendees notified!' }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Calendar event with ID "${(args as any).eventId}" not found.`);
+          }
+          throw error;
+        }
       }
 
       case 'meet_list': {
@@ -1307,38 +1689,142 @@ Would you like me to create a Task or Doc instead?`
       case 'meet_add_participants': {
         const calendar = google.calendar({ version: 'v3', auth });
 
-        // Get existing event
-        const event = await calendar.events.get({
-          calendarId: 'primary',
-          eventId: (args as any).eventId
-        });
+        try {
+          // Get existing event
+          const event = await calendar.events.get({
+            calendarId: 'primary',
+            eventId: (args as any).eventId
+          });
 
-        // Add new attendees
-        const existingAttendees = event.data.attendees || [];
-        const newAttendees = ((args as any).attendees || []).map((email: string) => ({ email }));
-        const allAttendees = [...existingAttendees, ...newAttendees];
+          // Add new attendees
+          const existingAttendees = event.data.attendees || [];
+          const newAttendees = ((args as any).attendees || []).map((email: string) => ({ email }));
+          const allAttendees = [...existingAttendees, ...newAttendees];
 
-        const response = await calendar.events.patch({
-          calendarId: 'primary',
-          eventId: (args as any).eventId,
-          sendUpdates: 'all',
-          requestBody: {
-            attendees: allAttendees
+          const response = await calendar.events.patch({
+            calendarId: 'primary',
+            eventId: (args as any).eventId,
+            sendUpdates: 'all',
+            requestBody: {
+              attendees: allAttendees
+            }
+          });
+          return {
+            content: [{ type: 'text', text: `Added ${newAttendees.length} participant(s) and sent invitations!` }]
+          };
+        } catch (error: any) {
+          if (error.code === 404) {
+            throw new NotFoundError(`Calendar event with ID "${(args as any).eventId}" not found.`);
           }
-        });
-        return {
-          content: [{ type: 'text', text: `Added ${newAttendees.length} participant(s) and sent invitations!` }]
-        };
+          throw error;
+        }
       }
 
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
+
   } catch (error: any) {
+    console.error(`❌ Error executing tool "${name}":`, error);
+
+    // ========================================
+    // ENHANCED ERROR CLASSIFICATION
+    // ========================================
+
+    // Authentication errors
+    if (error instanceof AuthenticationError ||
+        error.message?.includes('invalid_grant') ||
+        error.message?.includes('Invalid Credentials')) {
+      return {
+        content: [{
+          type: 'text',
+          text: `🔒 Authentication Required
+
+${error.message}
+
+Please authenticate by visiting the OAuth URL above.`
+        }],
+        isError: true
+      };
+    }
+
+    // Not found errors
+    if (error instanceof NotFoundError ||
+        error.code === 404 ||
+        error.message?.includes('not found')) {
+      return {
+        content: [{
+          type: 'text',
+          text: `❌ Not Found
+
+${error.message}
+
+The requested resource doesn't exist, may have been deleted, or you don't have access to it.`
+        }],
+        isError: true
+      };
+    }
+
+    // Permission errors
+    if (error instanceof PermissionError ||
+        error.code === 403 ||
+        error.message?.includes('permission') ||
+        error.message?.includes('forbidden')) {
+      return {
+        content: [{
+          type: 'text',
+          text: `🚫 Permission Denied
+
+${error.message}
+
+You don't have the necessary permissions to access or modify this resource.`
+        }],
+        isError: true
+      };
+    }
+
+    // Temporary/network errors
+    if (error instanceof TemporaryError ||
+        error.message?.includes('ECONNREFUSED') ||
+        error.message?.includes('timeout') ||
+        error.message?.includes('ETIMEDOUT') ||
+        error.message?.includes('temporarily unavailable')) {
+      return {
+        content: [{
+          type: 'text',
+          text: `⏱️ Temporary Error
+
+${error.message}
+
+This is likely a temporary network issue. Please try again in a moment.`
+        }],
+        isError: true
+      };
+    }
+
+    // Rate limit errors
+    if (error.code === 429 || error.message?.includes('rate limit')) {
+      return {
+        content: [{
+          type: 'text',
+          text: `⚠️ Rate Limit Exceeded
+
+You've made too many requests in a short period. Please wait a moment before trying again.`
+        }],
+        isError: true
+      };
+    }
+
+    // Unknown errors - provide helpful context
     return {
       content: [{
         type: 'text',
-        text: `Error: ${error.message}\n\nIf authentication error, please visit: ${process.env.GOOGLE_REDIRECT_URI?.replace('/oauth/callback', '/oauth/start')}?userId=${userId}`
+        text: `❌ Error: ${error.message}
+
+If this error persists, please check:
+- Your internet connection
+- The parameters you provided
+- Whether you have access to the requested resource`
       }],
       isError: true
     };
@@ -1363,4 +1849,5 @@ app.listen(PORT, () => {
   console.log(`🔐 OAuth start: http://localhost:${PORT}/oauth/start`);
   console.log(`📡 MCP endpoint for n8n: http://localhost:${PORT}/mcp`);
   console.log(`💾 Token storage: Supabase`);
+  console.log(`✨ Enhanced with smart search and robust error handling`);
 });
