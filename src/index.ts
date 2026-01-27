@@ -48,8 +48,6 @@ const SCOPES = [
   'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/contacts',
   'https://www.googleapis.com/auth/tasks'
-  // Note: Google Keep API exists in googleapis but has no public OAuth scope
-  // Keep API is restricted/internal only - use Google Tasks as alternative
 ];
 
 // ========================================
@@ -644,71 +642,6 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
             userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
           },
           required: ['taskId']
-        }
-      },
-      // Google Keep Tools
-      {
-        name: 'keep_create_note',
-        description: 'Create a new note in Google Keep',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Note title' },
-            content: { type: 'string', description: 'Note content' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['content']
-        }
-      },
-      {
-        name: 'keep_search_notes',
-        description: 'Search notes in Google Keep',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Search query' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['query']
-        }
-      },
-      {
-        name: 'keep_update_note',
-        description: 'Update an existing note in Google Keep',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            noteId: { type: 'string', description: 'Note ID' },
-            title: { type: 'string', description: 'New title (optional)' },
-            content: { type: 'string', description: 'New content (optional)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['noteId']
-        }
-      },
-      {
-        name: 'keep_delete_note',
-        description: 'Delete a note from Google Keep',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            noteId: { type: 'string', description: 'Note ID to delete' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['noteId']
-        }
-      },
-      {
-        name: 'keep_set_reminder',
-        description: 'Set a reminder on a Google Keep note',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            noteId: { type: 'string', description: 'Note ID' },
-            reminderTime: { type: 'string', description: 'Reminder time (ISO format)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['noteId', 'reminderTime']
         }
       },
       // Drive Extended Tools
@@ -1378,43 +1311,6 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
           throw error;
         }
-      }
-
-      // Google Keep handlers
-      // Note: Keep API exists in googleapis but has NO public OAuth scope
-      // It's restricted/internal only - not available for public use
-      case 'keep_create_note':
-      case 'keep_search_notes':
-      case 'keep_update_note':
-      case 'keep_delete_note':
-      case 'keep_set_reminder': {
-        return {
-          content: [{
-            type: 'text',
-            text: `❌ Google Keep API is not publicly available
-
-While the Keep API exists in googleapis, it has no public OAuth scope and is restricted to internal Google use only.
-
-✅ **Use these alternatives instead:**
-
-1. **Google Tasks** (best alternative):
-   - Similar to Keep for notes/to-dos
-   - Fully available: tasks_create, tasks_list, tasks_update, tasks_complete, tasks_delete
-   - Example: "Create a task: Buy groceries by Friday"
-
-2. **Google Docs** (for longer notes):
-   - Create documents for detailed notes
-   - Available: docs_create, docs_read, docs_append, docs_delete
-   - Example: "Create a doc called Meeting Notes"
-
-3. **Calendar with reminders**:
-   - Use calendar events with reminders
-   - Available: calendar_create_event with reminders
-
-Would you like me to create a Task or Doc instead?`
-          }],
-          isError: false  // Not an error, just unavailable
-        };
       }
 
       // Drive Extended handlers
