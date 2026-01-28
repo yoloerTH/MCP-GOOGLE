@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -18,6 +19,19 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CORS Configuration - Allow requests from frontend
+app.use(cors({
+  origin: [
+    'https://googleassistantai.netlify.app',
+    'https://voicecallai.netlify.app',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, '../public')));
@@ -404,12 +418,23 @@ app.get('/oauth/callback', async (req, res) => {
               font-family: monospace;
             }
           </style>
+          <script>
+            // Notify parent window of success
+            if (window.opener) {
+              window.opener.postMessage(
+                { type: 'oauth-success', userId: '${userId}' },
+                '${process.env.FRONTEND_URL || 'https://googleassistantai.netlify.app'}'
+              );
+            }
+            // Auto-close after 2 seconds
+            setTimeout(() => window.close(), 2000);
+          </script>
         </head>
         <body>
           <h1>✅ Authentication Successful!</h1>
           <p>Your Google Workspace account has been connected.</p>
           <div class="user-id">User ID: ${userId}</div>
-          <p>You can close this window and return to the app.</p>
+          <p>This window will close automatically...</p>
         </body>
       </html>
     `);
@@ -421,15 +446,27 @@ app.get('/oauth/callback', async (req, res) => {
         <head>
           <title>Authentication Failed</title>
           <style>
-            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
             h1 { color: #dc2626; }
-            pre { background: #f3f4f6; padding: 10px; border-radius: 4px; overflow-x: auto; }
+            pre { background: #f3f4f6; padding: 10px; border-radius: 4px; overflow-x: auto; text-align: left; }
           </style>
+          <script>
+            // Notify parent window of failure
+            if (window.opener) {
+              window.opener.postMessage(
+                { type: 'oauth-error', error: '${String(error).replace(/'/g, "\\'")}' },
+                '${process.env.FRONTEND_URL || 'https://googleassistantai.netlify.app'}'
+              );
+            }
+            // Auto-close after 3 seconds
+            setTimeout(() => window.close(), 3000);
+          </script>
         </head>
         <body>
           <h1>❌ Authentication Failed</h1>
           <p>An error occurred while saving your credentials.</p>
           <pre>${error}</pre>
+          <p>This window will close automatically...</p>
         </body>
       </html>
     `);
