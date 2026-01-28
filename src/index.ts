@@ -315,27 +315,124 @@ async function smartDriveSearch(auth: any, query: string, maxResults: number = 1
 // ========================================
 
 app.get('/oauth/start', (req, res) => {
-  const userId = req.query.userId as string || 'default-user';
+  const userId = req.query.userId as string;
+
+  if (!userId) {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Missing User ID</title>
+          <style>
+            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+            h1 { color: #dc2626; }
+            code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Error: userId parameter is required</h1>
+          <p>This endpoint expects a Supabase user ID to link Google Workspace credentials.</p>
+          <p><strong>Example:</strong> <code>/oauth/start?userId=abc123-def456-ghi789</code></p>
+          <p>If you're using the frontend app, this should happen automatically after you sign in.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  console.log(`🔐 Starting OAuth flow for user: ${userId}`);
+
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
-    state: userId,
-    prompt: 'consent' // Force fresh login every time
+    state: userId,  // Pass userId through OAuth state parameter
+    prompt: 'consent'
   });
+
   res.redirect(authUrl);
 });
 
 app.get('/oauth/callback', async (req, res) => {
   const code = req.query.code as string;
-  const userId = req.query.state as string || 'default-user';
+  const userId = req.query.state as string;
+
+  if (!userId) {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Invalid State</title>
+          <style>
+            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+            h1 { color: #dc2626; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Invalid authentication state</h1>
+          <p>The userId was not preserved during the OAuth flow. Please try again.</p>
+        </body>
+      </html>
+    `);
+  }
 
   try {
+    console.log(`✅ OAuth callback received for user: ${userId}`);
+
     const { tokens } = await oauth2Client.getToken(code);
     await saveTokens(userId, tokens);
-    res.send('✅ Authentication successful! Your tokens are now saved to Supabase. You can close this window and return to n8n.');
+
+    console.log(`💾 Tokens saved for user: ${userId}`);
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Authentication Successful</title>
+          <style>
+            body {
+              font-family: system-ui;
+              max-width: 600px;
+              margin: 50px auto;
+              padding: 20px;
+              text-align: center;
+            }
+            h1 { color: #10b981; }
+            .user-id {
+              background: #f3f4f6;
+              padding: 10px;
+              border-radius: 8px;
+              margin: 20px 0;
+              font-family: monospace;
+            }
+          </style>
+        </head>
+        <body>
+          <h1>✅ Authentication Successful!</h1>
+          <p>Your Google Workspace account has been connected.</p>
+          <div class="user-id">User ID: ${userId}</div>
+          <p>You can close this window and return to the app.</p>
+        </body>
+      </html>
+    `);
   } catch (error) {
     console.error('OAuth callback error:', error);
-    res.status(500).send('❌ Authentication failed: ' + error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Authentication Failed</title>
+          <style>
+            body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
+            h1 { color: #dc2626; }
+            pre { background: #f3f4f6; padding: 10px; border-radius: 4px; overflow-x: auto; }
+          </style>
+        </head>
+        <body>
+          <h1>❌ Authentication Failed</h1>
+          <p>An error occurred while saving your credentials.</p>
+          <pre>${error}</pre>
+        </body>
+      </html>
+    `);
   }
 });
 
