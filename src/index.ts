@@ -1046,18 +1046,30 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'gmail_send': {
         const gmail = google.gmail({ version: 'v1', auth });
+
+        // Build email with proper UTF-8 MIME headers
         const email = [
           `To: ${(args as any).to}`,
           `Subject: ${(args as any).subject}`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset=UTF-8',
+          'Content-Transfer-Encoding: 8bit',
           '',
           (args as any).body
         ].join('\n');
 
-        const encodedEmail = Buffer.from(email).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+        // Encode to base64url format (RFC 4648)
+        const encodedEmail = Buffer.from(email, 'utf8')
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+
         const response = await gmail.users.messages.send({
           userId: 'me',
           requestBody: { raw: encodedEmail }
         });
+
         return {
           content: [{ type: 'text', text: `Email sent successfully! Message ID: ${response.data.id}` }]
         };
