@@ -23,6 +23,8 @@ const PORT = process.env.PORT || 3000;
 // CORS Configuration - Allow requests from frontend
 app.use(cors({
   origin: [
+    'https://naurra.ai',
+    'https://www.naurra.ai',
     'https://googleassistantai.netlify.app',
     'https://voicecallai.netlify.app',
     'http://localhost:5173',
