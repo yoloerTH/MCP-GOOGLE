@@ -1047,6 +1047,18 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
         }
       },
       {
+        name: 'sheets_get_metadata',
+        description: 'Get spreadsheet metadata: tab names, row/column counts, and basic properties. Use this BEFORE reading specific tabs to discover what tabs exist.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+          },
+          required: ['spreadsheetId']
+        }
+      },
+      {
         name: 'sheets_add_sheet',
         description: 'Add a new sheet tab to an existing Google Spreadsheet',
         inputSchema: {
@@ -1570,7 +1582,7 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         return {
-          content: [{ type: 'text', text: `Document created! ID: ${response.data.documentId}` }]
+          content: [{ type: 'text', text: `Document created! ID: ${response.data.documentId}\nURL: https://docs.google.com/document/d/${response.data.documentId}/edit` }]
         };
       }
 
@@ -1647,6 +1659,37 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ type: 'text', text: summary }]
         };
+      }
+
+      case 'sheets_get_metadata': {
+        const sheets = google.sheets({ version: 'v4', auth });
+
+        try {
+          const response = await sheets.spreadsheets.get({
+            spreadsheetId: (args as any).spreadsheetId,
+            fields: 'properties.title,sheets.properties'
+          });
+
+          const title = response.data.properties?.title;
+          const sheetsInfo = (response.data.sheets || []).map((s: any) => ({
+            name: s.properties?.title,
+            sheetId: s.properties?.sheetId,
+            index: s.properties?.index,
+            rows: s.properties?.gridProperties?.rowCount,
+            columns: s.properties?.gridProperties?.columnCount
+          }));
+
+          const summary = [
+            `Spreadsheet: "${title}"`,
+            `Tabs (${sheetsInfo.length}):`,
+            ...sheetsInfo.map((s: any) => `  - "${s.name}" (${s.rows} rows x ${s.columns} columns, sheetId: ${s.sheetId})`)
+          ].join('\n');
+
+          return { content: [{ type: 'text', text: summary }] };
+        } catch (error: any) {
+          if (error.code === 404) throw new NotFoundError(`Spreadsheet "${(args as any).spreadsheetId}" not found.`);
+          throw error;
+        }
       }
 
       case 'sheets_write': {
