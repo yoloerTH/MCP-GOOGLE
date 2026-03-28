@@ -962,6 +962,203 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
                     required: ['spreadsheetId', 'sheetName']
                 }
             },
+            // Google Sheets - Formatting Tools
+            {
+                name: 'sheets_format_cells',
+                description: 'Format cells in a Google Sheet: bold, italic, font size/color, background color, number format (currency/percent/date), alignment, text wrapping. Apply multiple formats in one call.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        range: { type: 'string', description: 'A1 notation range (e.g., "Sheet1!A1:D1" or "Revenue!B2:B20")' },
+                        bold: { type: 'boolean', description: 'Make text bold' },
+                        italic: { type: 'boolean', description: 'Make text italic' },
+                        fontSize: { type: 'number', description: 'Font size in points (e.g., 12)' },
+                        fontColor: { type: 'string', description: 'Font color as hex (#FF0000) or named color (red, blue, green, etc.)' },
+                        backgroundColor: { type: 'string', description: 'Cell background color as hex or named color' },
+                        numberFormat: { type: 'string', description: 'Number format type: "currency", "percent", "number", "date", "text"' },
+                        numberFormatPattern: { type: 'string', description: 'Custom number format pattern (e.g., "$#,##0.00", "0.00%"). Overrides numberFormat.' },
+                        horizontalAlignment: { type: 'string', description: 'Text alignment: "LEFT", "CENTER", "RIGHT"' },
+                        wrapStrategy: { type: 'string', description: 'Text wrapping: "WRAP", "CLIP", "OVERFLOW_CELL"' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'range']
+                }
+            },
+            {
+                name: 'sheets_freeze',
+                description: 'Freeze rows and/or columns in a Google Sheet so they stay visible while scrolling.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
+                        frozenRows: { type: 'number', description: 'Number of rows to freeze (e.g., 1 for header row)' },
+                        frozenColumns: { type: 'number', description: 'Number of columns to freeze' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId']
+                }
+            },
+            {
+                name: 'sheets_merge_cells',
+                description: 'Merge a range of cells in a Google Sheet.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        range: { type: 'string', description: 'A1 notation range to merge (e.g., "Sheet1!A1:D1")' },
+                        mergeType: { type: 'string', description: 'Merge type: "MERGE_ALL" (default), "MERGE_COLUMNS", "MERGE_ROWS"' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'range']
+                }
+            },
+            {
+                name: 'sheets_set_column_width',
+                description: 'Set the width of columns in a Google Sheet.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
+                        startColumn: { type: 'string', description: 'Start column letter (e.g., "A")' },
+                        endColumn: { type: 'string', description: 'End column letter inclusive (e.g., "C")' },
+                        pixelSize: { type: 'number', description: 'Column width in pixels' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'startColumn', 'endColumn', 'pixelSize']
+                }
+            },
+            {
+                name: 'sheets_auto_resize',
+                description: 'Auto-resize columns to fit their content in a Google Sheet.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
+                        startColumn: { type: 'string', description: 'Start column letter (default: "A")' },
+                        endColumn: { type: 'string', description: 'End column letter (default: "Z")' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId']
+                }
+            },
+            {
+                name: 'sheets_add_chart',
+                description: 'Insert a chart into a Google Sheet. Supports BAR, LINE, COLUMN, AREA, SCATTER, and PIE chart types.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        sheetName: { type: 'string', description: 'Sheet tab where data lives (defaults to first sheet)' },
+                        chartType: { type: 'string', description: 'Chart type: "BAR", "LINE", "COLUMN", "AREA", "SCATTER", or "PIE"' },
+                        dataRange: { type: 'string', description: 'A1 range of chart data (e.g., "A1:B10"). First column = labels, remaining = data series.' },
+                        title: { type: 'string', description: 'Chart title' },
+                        legendPosition: { type: 'string', description: 'Legend position: "BOTTOM_LEGEND", "LEFT_LEGEND", "RIGHT_LEGEND", "TOP_LEGEND", "NO_LEGEND". Default: "BOTTOM_LEGEND"' },
+                        headerCount: { type: 'number', description: 'Number of header rows in data range (default: 1)' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'chartType', 'dataRange']
+                }
+            },
+            {
+                name: 'sheets_conditional_format',
+                description: 'Add conditional formatting rules to a Google Sheet. Color cells based on their value.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        range: { type: 'string', description: 'A1 notation range to apply formatting (e.g., "Sheet1!B2:B20")' },
+                        ruleType: { type: 'string', description: 'Rule type: "GREATER_THAN", "LESS_THAN", "EQUAL_TO", "TEXT_CONTAINS", "NOT_EMPTY", "CUSTOM_FORMULA"' },
+                        values: { type: 'array', description: 'Condition values (e.g., ["100"] for GREATER_THAN, ["=A1>B1"] for CUSTOM_FORMULA). Not required for NOT_EMPTY.', items: { type: 'string' } },
+                        backgroundColor: { type: 'string', description: 'Background color for matching cells (hex or named). Default: green' },
+                        fontColor: { type: 'string', description: 'Text color for matching cells (hex or named)' },
+                        bold: { type: 'boolean', description: 'Bold text for matching cells' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'range', 'ruleType']
+                }
+            },
+            {
+                name: 'sheets_banding',
+                description: 'Apply alternating row colors (banded rows) to a Google Sheet for better readability.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+                        range: { type: 'string', description: 'A1 notation range for banding (e.g., "Sheet1!A1:F20")' },
+                        headerColor: { type: 'string', description: 'Header row color (hex or named). Default: "#4285F4" (blue)' },
+                        firstBandColor: { type: 'string', description: 'First alternating color. Default: "#FFFFFF" (white)' },
+                        secondBandColor: { type: 'string', description: 'Second alternating color. Default: "#E8F0FE" (light blue)' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['spreadsheetId', 'range']
+                }
+            },
+            // Google Docs - Formatting Tools
+            {
+                name: 'docs_insert_table',
+                description: 'Insert a table into a Google Doc, optionally pre-populated with data.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        documentId: { type: 'string', description: 'Document ID' },
+                        rows: { type: 'number', description: 'Number of rows' },
+                        columns: { type: 'number', description: 'Number of columns' },
+                        index: { type: 'number', description: 'Insert position (character index). Defaults to end of document.' },
+                        data: { type: 'array', description: 'Optional 2D array to populate the table (e.g., [["Name","Age"],["Alice","30"]])', items: { type: 'array', items: { type: 'string' } } },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['documentId', 'rows', 'columns']
+                }
+            },
+            {
+                name: 'docs_set_heading',
+                description: 'Apply heading styles to paragraphs in a Google Doc.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        documentId: { type: 'string', description: 'Document ID' },
+                        startIndex: { type: 'number', description: 'Start index of the paragraph(s)' },
+                        endIndex: { type: 'number', description: 'End index of the paragraph(s)' },
+                        headingType: { type: 'string', description: 'Heading type: "TITLE", "SUBTITLE", "HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6", "NORMAL_TEXT"' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['documentId', 'startIndex', 'endIndex', 'headingType']
+                }
+            },
+            {
+                name: 'docs_insert_link',
+                description: 'Add a hyperlink to a text range in a Google Doc.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        documentId: { type: 'string', description: 'Document ID' },
+                        startIndex: { type: 'number', description: 'Start index of the text to link' },
+                        endIndex: { type: 'number', description: 'End index of the text to link' },
+                        url: { type: 'string', description: 'The URL to link to' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['documentId', 'startIndex', 'endIndex', 'url']
+                }
+            },
+            {
+                name: 'docs_insert_list',
+                description: 'Apply bullet or numbered list formatting to paragraphs in a Google Doc.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        documentId: { type: 'string', description: 'Document ID' },
+                        startIndex: { type: 'number', description: 'Start index of the range to format as list' },
+                        endIndex: { type: 'number', description: 'End index of the range' },
+                        listType: { type: 'string', description: 'List type: "BULLET" or "NUMBERED"' },
+                        userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+                    },
+                    required: ['documentId', 'startIndex', 'endIndex', 'listType']
+                }
+            },
             // Google Drive - Folder Creation
             {
                 name: 'drive_create_folder',
@@ -996,6 +1193,72 @@ function safeStringify(data) {
     catch (error) {
         return String(data);
     }
+}
+// Parse hex color string or named color to Google API RGB floats
+function parseColor(color) {
+    const named = {
+        red: '#FF0000', green: '#00FF00', blue: '#0000FF',
+        white: '#FFFFFF', black: '#000000', yellow: '#FFFF00',
+        orange: '#FFA500', purple: '#800080', gray: '#808080',
+        grey: '#808080', pink: '#FFC0CB', cyan: '#00FFFF',
+        lightblue: '#ADD8E6', lightgreen: '#90EE90', lightgray: '#D3D3D3',
+        darkblue: '#00008B', darkgreen: '#006400', darkred: '#8B0000',
+    };
+    const hex = named[color.toLowerCase()] || color;
+    const match = hex.match(/^#?([0-9A-Fa-f]{6})$/);
+    if (!match)
+        return { red: 0, green: 0, blue: 0 };
+    return {
+        red: parseInt(match[1].substring(0, 2), 16) / 255,
+        green: parseInt(match[1].substring(2, 4), 16) / 255,
+        blue: parseInt(match[1].substring(4, 6), 16) / 255,
+    };
+}
+// Convert column letter(s) to zero-based index: A=0, B=1, Z=25, AA=26
+function columnLetterToIndex(letter) {
+    let index = 0;
+    for (let i = 0; i < letter.length; i++) {
+        index = index * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return index - 1;
+}
+// Parse A1 range notation into GridRange object
+function parseA1Range(range, sheetId) {
+    // Strip sheet name prefix if present (e.g., "Sheet1!A1:D10" -> "A1:D10")
+    const rangePart = range.includes('!') ? range.split('!')[1] : range;
+    const parts = rangePart.split(':');
+    const startMatch = parts[0].match(/^([A-Z]+)(\d+)$/);
+    if (!startMatch)
+        throw new Error(`Invalid range format: ${range}`);
+    const startCol = columnLetterToIndex(startMatch[1]);
+    const startRow = parseInt(startMatch[2]) - 1;
+    if (parts.length === 1) {
+        return { sheetId, startRowIndex: startRow, endRowIndex: startRow + 1, startColumnIndex: startCol, endColumnIndex: startCol + 1 };
+    }
+    const endMatch = parts[1].match(/^([A-Z]+)(\d+)$/);
+    if (!endMatch)
+        throw new Error(`Invalid range format: ${range}`);
+    const endCol = columnLetterToIndex(endMatch[1]);
+    const endRow = parseInt(endMatch[2]) - 1;
+    return { sheetId, startRowIndex: startRow, endRowIndex: endRow + 1, startColumnIndex: startCol, endColumnIndex: endCol + 1 };
+}
+// Resolve sheet tab name to numeric sheetId
+async function getSheetId(auth, spreadsheetId, sheetName) {
+    const sheets = google.sheets({ version: 'v4', auth });
+    const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties' });
+    const allSheets = meta.data.sheets || [];
+    if (!sheetName)
+        return allSheets[0]?.properties?.sheetId || 0;
+    const found = allSheets.find(s => s.properties?.title === sheetName);
+    if (!found)
+        throw new NotFoundError(`Sheet tab "${sheetName}" not found in spreadsheet.`);
+    return found.properties.sheetId;
+}
+// Extract sheet name from A1 range (e.g., "'Revenue'!A1:D10" -> "Revenue")
+function extractSheetName(range) {
+    if (!range.includes('!'))
+        return undefined;
+    return range.split('!')[0].replace(/^'|'$/g, '');
 }
 // ========================================
 // TOOL HANDLERS
@@ -1276,6 +1539,521 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
                 return {
                     content: [{ type: 'text', text: `Added sheet tab "${newSheet?.title}" (ID: ${newSheet?.sheetId})` }]
                 };
+            }
+            // ========================================
+            // SHEETS FORMATTING HANDLERS
+            // ========================================
+            case 'sheets_format_cells': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const rangeStr = args.range;
+                const sheetName = extractSheetName(rangeStr);
+                const sheetId = await getSheetId(auth, args.spreadsheetId, sheetName);
+                const gridRange = parseA1Range(rangeStr, sheetId);
+                const cellFormat = {};
+                const fields = [];
+                const textFormat = {};
+                if (args.bold !== undefined) {
+                    textFormat.bold = args.bold;
+                    fields.push('userEnteredFormat.textFormat.bold');
+                }
+                if (args.italic !== undefined) {
+                    textFormat.italic = args.italic;
+                    fields.push('userEnteredFormat.textFormat.italic');
+                }
+                if (args.fontSize) {
+                    textFormat.fontSize = { magnitude: args.fontSize, unit: 'PT' };
+                    fields.push('userEnteredFormat.textFormat.fontSize');
+                }
+                if (args.fontColor) {
+                    textFormat.foregroundColorStyle = { rgbColor: parseColor(args.fontColor) };
+                    fields.push('userEnteredFormat.textFormat.foregroundColorStyle');
+                }
+                if (Object.keys(textFormat).length > 0)
+                    cellFormat.textFormat = textFormat;
+                if (args.backgroundColor) {
+                    cellFormat.backgroundColor = parseColor(args.backgroundColor);
+                    fields.push('userEnteredFormat.backgroundColor');
+                }
+                if (args.horizontalAlignment) {
+                    cellFormat.horizontalAlignment = args.horizontalAlignment;
+                    fields.push('userEnteredFormat.horizontalAlignment');
+                }
+                if (args.wrapStrategy) {
+                    cellFormat.wrapStrategy = args.wrapStrategy;
+                    fields.push('userEnteredFormat.wrapStrategy');
+                }
+                if (args.numberFormatPattern) {
+                    cellFormat.numberFormat = { type: 'NUMBER', pattern: args.numberFormatPattern };
+                    fields.push('userEnteredFormat.numberFormat');
+                }
+                else if (args.numberFormat) {
+                    const formatMap = {
+                        currency: { type: 'CURRENCY', pattern: '$#,##0.00' },
+                        percent: { type: 'PERCENT', pattern: '0.00%' },
+                        number: { type: 'NUMBER', pattern: '#,##0.00' },
+                        date: { type: 'DATE', pattern: 'MMM dd, yyyy' },
+                        text: { type: 'TEXT', pattern: '' },
+                    };
+                    const fmt = formatMap[args.numberFormat.toLowerCase()];
+                    if (fmt) {
+                        cellFormat.numberFormat = fmt;
+                        fields.push('userEnteredFormat.numberFormat');
+                    }
+                }
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    repeatCell: {
+                                        range: gridRange,
+                                        cell: { userEnteredFormat: cellFormat },
+                                        fields: fields.join(',')
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Formatted cells ${rangeStr}: ${fields.map(f => f.replace('userEnteredFormat.', '')).join(', ')}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_freeze': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const sheetId = await getSheetId(auth, args.spreadsheetId, args.sheetName);
+                const gridProperties = {};
+                const fieldParts = [];
+                if (args.frozenRows !== undefined) {
+                    gridProperties.frozenRowCount = args.frozenRows;
+                    fieldParts.push('gridProperties.frozenRowCount');
+                }
+                if (args.frozenColumns !== undefined) {
+                    gridProperties.frozenColumnCount = args.frozenColumns;
+                    fieldParts.push('gridProperties.frozenColumnCount');
+                }
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    updateSheetProperties: {
+                                        properties: { sheetId, gridProperties },
+                                        fields: fieldParts.join(',')
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Frozen ${args.frozenRows || 0} row(s) and ${args.frozenColumns || 0} column(s)` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_merge_cells': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const rangeStr = args.range;
+                const sheetName = extractSheetName(rangeStr);
+                const sheetId = await getSheetId(auth, args.spreadsheetId, sheetName);
+                const gridRange = parseA1Range(rangeStr, sheetId);
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    mergeCells: {
+                                        range: gridRange,
+                                        mergeType: args.mergeType || 'MERGE_ALL'
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Merged cells ${rangeStr}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_set_column_width': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const sheetId = await getSheetId(auth, args.spreadsheetId, args.sheetName);
+                const startCol = columnLetterToIndex(args.startColumn.toUpperCase());
+                const endCol = columnLetterToIndex(args.endColumn.toUpperCase()) + 1;
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    updateDimensionProperties: {
+                                        range: { sheetId, dimension: 'COLUMNS', startIndex: startCol, endIndex: endCol },
+                                        properties: { pixelSize: args.pixelSize },
+                                        fields: 'pixelSize'
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Set column width ${args.startColumn}-${args.endColumn} to ${args.pixelSize}px` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_auto_resize': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const sheetId = await getSheetId(auth, args.spreadsheetId, args.sheetName);
+                const startCol = columnLetterToIndex((args.startColumn || 'A').toUpperCase());
+                const endCol = columnLetterToIndex((args.endColumn || 'Z').toUpperCase()) + 1;
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    autoResizeDimensions: {
+                                        dimensions: { sheetId, dimension: 'COLUMNS', startIndex: startCol, endIndex: endCol }
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Auto-resized columns ${args.startColumn || 'A'}-${args.endColumn || 'Z'}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_add_chart': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const sheetName = args.sheetName;
+                const sheetId = await getSheetId(auth, args.spreadsheetId, sheetName);
+                const dataRange = parseA1Range(args.dataRange, sheetId);
+                const chartType = (args.chartType || 'BAR').toUpperCase();
+                const headerCount = args.headerCount || 1;
+                const title = args.title || '';
+                const legendPosition = args.legendPosition || 'BOTTOM_LEGEND';
+                let chartSpec;
+                if (chartType === 'PIE') {
+                    chartSpec = {
+                        title,
+                        pieChart: {
+                            legendPosition,
+                            domain: {
+                                sourceRange: { sources: [{ sheetId, startRowIndex: dataRange.startRowIndex, endRowIndex: dataRange.endRowIndex, startColumnIndex: dataRange.startColumnIndex, endColumnIndex: dataRange.startColumnIndex + 1 }] }
+                            },
+                            series: {
+                                sourceRange: { sources: [{ sheetId, startRowIndex: dataRange.startRowIndex, endRowIndex: dataRange.endRowIndex, startColumnIndex: dataRange.startColumnIndex + 1, endColumnIndex: dataRange.startColumnIndex + 2 }] }
+                            }
+                        }
+                    };
+                }
+                else {
+                    const domains = [{
+                            domain: {
+                                sourceRange: { sources: [{ sheetId, startRowIndex: dataRange.startRowIndex, endRowIndex: dataRange.endRowIndex, startColumnIndex: dataRange.startColumnIndex, endColumnIndex: dataRange.startColumnIndex + 1 }] }
+                            }
+                        }];
+                    const series = [];
+                    for (let col = dataRange.startColumnIndex + 1; col < dataRange.endColumnIndex; col++) {
+                        series.push({
+                            series: {
+                                sourceRange: { sources: [{ sheetId, startRowIndex: dataRange.startRowIndex, endRowIndex: dataRange.endRowIndex, startColumnIndex: col, endColumnIndex: col + 1 }] }
+                            },
+                            targetAxis: 'LEFT_AXIS'
+                        });
+                    }
+                    chartSpec = {
+                        title,
+                        basicChart: {
+                            chartType,
+                            legendPosition,
+                            domains,
+                            series,
+                            headerCount
+                        }
+                    };
+                }
+                try {
+                    const response = await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    addChart: {
+                                        chart: {
+                                            spec: chartSpec,
+                                            position: {
+                                                overlayPosition: {
+                                                    anchorCell: { sheetId, rowIndex: dataRange.endRowIndex + 1, columnIndex: dataRange.startColumnIndex },
+                                                    widthPixels: 600,
+                                                    heightPixels: 400
+                                                }
+                                            }
+                                        }
+                                    }
+                                }]
+                        }
+                    });
+                    const chartId = response.data.replies?.[0]?.addChart?.chart?.chartId;
+                    return { content: [{ type: 'text', text: `Added ${chartType} chart${title ? ` "${title}"` : ''} (ID: ${chartId})` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_conditional_format': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const rangeStr = args.range;
+                const sheetName = extractSheetName(rangeStr);
+                const sheetId = await getSheetId(auth, args.spreadsheetId, sheetName);
+                const gridRange = parseA1Range(rangeStr, sheetId);
+                const ruleTypeMap = {
+                    'GREATER_THAN': 'NUMBER_GREATER',
+                    'LESS_THAN': 'NUMBER_LESS',
+                    'EQUAL_TO': 'NUMBER_EQ',
+                    'TEXT_CONTAINS': 'TEXT_CONTAINS',
+                    'NOT_EMPTY': 'NOT_BLANK',
+                    'CUSTOM_FORMULA': 'CUSTOM_FORMULA',
+                };
+                const conditionType = ruleTypeMap[(args.ruleType || '').toUpperCase()] || args.ruleType;
+                const conditionValues = (args.values || []).map((v) => ({ userEnteredValue: v }));
+                const format = {};
+                if (args.backgroundColor) {
+                    format.backgroundColor = parseColor(args.backgroundColor);
+                }
+                else {
+                    format.backgroundColor = parseColor('#00FF00');
+                }
+                if (args.fontColor) {
+                    format.textFormat = { ...format.textFormat, foregroundColor: parseColor(args.fontColor) };
+                }
+                if (args.bold) {
+                    format.textFormat = { ...format.textFormat, bold: true };
+                }
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    addConditionalFormatRule: {
+                                        rule: {
+                                            ranges: [gridRange],
+                                            booleanRule: {
+                                                condition: { type: conditionType, values: conditionValues.length > 0 ? conditionValues : undefined },
+                                                format
+                                            }
+                                        },
+                                        index: 0
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Added conditional format rule (${args.ruleType}) to ${rangeStr}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'sheets_banding': {
+                const sheets = google.sheets({ version: 'v4', auth });
+                const rangeStr = args.range;
+                const sheetName = extractSheetName(rangeStr);
+                const sheetId = await getSheetId(auth, args.spreadsheetId, sheetName);
+                const gridRange = parseA1Range(rangeStr, sheetId);
+                const headerColor = parseColor(args.headerColor || '#4285F4');
+                const firstBandColor = parseColor(args.firstBandColor || '#FFFFFF');
+                const secondBandColor = parseColor(args.secondBandColor || '#E8F0FE');
+                try {
+                    await sheets.spreadsheets.batchUpdate({
+                        spreadsheetId: args.spreadsheetId,
+                        requestBody: {
+                            requests: [{
+                                    addBanding: {
+                                        bandedRange: {
+                                            range: gridRange,
+                                            rowProperties: {
+                                                headerColor,
+                                                firstBandColor,
+                                                secondBandColor
+                                            }
+                                        }
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Applied alternating row colors to ${rangeStr}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Spreadsheet "${args.spreadsheetId}" not found.`);
+                    throw error;
+                }
+            }
+            // ========================================
+            // DOCS FORMATTING HANDLERS
+            // ========================================
+            case 'docs_insert_table': {
+                const docs = google.docs({ version: 'v1', auth });
+                try {
+                    let insertIndex = args.index;
+                    if (insertIndex === undefined) {
+                        const doc = await docs.documents.get({ documentId: args.documentId });
+                        insertIndex = (doc.data.body?.content?.slice(-1)[0]?.endIndex || 2) - 1;
+                    }
+                    // Insert the table
+                    await docs.documents.batchUpdate({
+                        documentId: args.documentId,
+                        requestBody: {
+                            requests: [{
+                                    insertTable: {
+                                        rows: args.rows,
+                                        columns: args.columns,
+                                        location: { index: insertIndex }
+                                    }
+                                }]
+                        }
+                    });
+                    // If data is provided, populate the table cells
+                    if (args.data && args.data.length > 0) {
+                        // Re-read the document to get table cell indices
+                        const updatedDoc = await docs.documents.get({ documentId: args.documentId });
+                        const body = updatedDoc.data.body?.content || [];
+                        // Find the table we just inserted
+                        const table = body.find((el) => el.table && el.startIndex >= insertIndex);
+                        if (table && table.table) {
+                            const insertRequests = [];
+                            const tableRows = table.table.tableRows || [];
+                            for (let r = 0; r < Math.min(args.data.length, tableRows.length); r++) {
+                                const cells = tableRows[r].tableCells || [];
+                                for (let c = 0; c < Math.min(args.data[r].length, cells.length); c++) {
+                                    const cellContent = cells[c].content;
+                                    if (cellContent && cellContent[0]) {
+                                        const cellIndex = cellContent[0].startIndex;
+                                        const text = args.data[r][c];
+                                        if (text) {
+                                            insertRequests.push({
+                                                insertText: {
+                                                    location: { index: cellIndex },
+                                                    text
+                                                }
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            // Execute in reverse order to preserve indices
+                            if (insertRequests.length > 0) {
+                                insertRequests.reverse();
+                                await docs.documents.batchUpdate({
+                                    documentId: args.documentId,
+                                    requestBody: { requests: insertRequests }
+                                });
+                            }
+                        }
+                    }
+                    return { content: [{ type: 'text', text: `Inserted ${args.rows}x${args.columns} table${args.data ? ' with data' : ''}` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Document "${args.documentId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'docs_set_heading': {
+                const docs = google.docs({ version: 'v1', auth });
+                try {
+                    await docs.documents.batchUpdate({
+                        documentId: args.documentId,
+                        requestBody: {
+                            requests: [{
+                                    updateParagraphStyle: {
+                                        range: {
+                                            startIndex: args.startIndex,
+                                            endIndex: args.endIndex
+                                        },
+                                        paragraphStyle: {
+                                            namedStyleType: args.headingType
+                                        },
+                                        fields: 'namedStyleType'
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Applied ${args.headingType} style` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Document "${args.documentId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'docs_insert_link': {
+                const docs = google.docs({ version: 'v1', auth });
+                try {
+                    await docs.documents.batchUpdate({
+                        documentId: args.documentId,
+                        requestBody: {
+                            requests: [{
+                                    updateTextStyle: {
+                                        range: {
+                                            startIndex: args.startIndex,
+                                            endIndex: args.endIndex
+                                        },
+                                        textStyle: {
+                                            link: { url: args.url }
+                                        },
+                                        fields: 'link'
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Added link to "${args.url}"` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Document "${args.documentId}" not found.`);
+                    throw error;
+                }
+            }
+            case 'docs_insert_list': {
+                const docs = google.docs({ version: 'v1', auth });
+                const presetMap = {
+                    'BULLET': 'BULLET_DISC_CIRCLE_SQUARE',
+                    'NUMBERED': 'NUMBERED_DECIMAL_ALPHA_ROMAN',
+                };
+                const bulletPreset = presetMap[(args.listType || 'BULLET').toUpperCase()] || 'BULLET_DISC_CIRCLE_SQUARE';
+                try {
+                    await docs.documents.batchUpdate({
+                        documentId: args.documentId,
+                        requestBody: {
+                            requests: [{
+                                    createParagraphBullets: {
+                                        range: {
+                                            startIndex: args.startIndex,
+                                            endIndex: args.endIndex
+                                        },
+                                        bulletPreset
+                                    }
+                                }]
+                        }
+                    });
+                    return { content: [{ type: 'text', text: `Applied ${args.listType} list formatting` }] };
+                }
+                catch (error) {
+                    if (error.code === 404)
+                        throw new NotFoundError(`Document "${args.documentId}" not found.`);
+                    throw error;
+                }
             }
             case 'drive_create_folder': {
                 const drive = google.drive({ version: 'v3', auth });
