@@ -425,7 +425,7 @@ app.get('/oauth/callback', async (req, res) => {
             if (window.opener) {
               window.opener.postMessage(
                 { type: 'oauth-success', userId: '${userId}' },
-                '${process.env.FRONTEND_URL || 'https://googleassistantai.netlify.app'}'
+                '${process.env.FRONTEND_URL || 'https://naurra.ai'}'
               );
             }
             // Auto-close after 2 seconds
@@ -457,7 +457,7 @@ app.get('/oauth/callback', async (req, res) => {
             if (window.opener) {
               window.opener.postMessage(
                 { type: 'oauth-error', error: '${String(error).replace(/'/g, "\\'")}' },
-                '${process.env.FRONTEND_URL || 'https://googleassistantai.netlify.app'}'
+                '${process.env.FRONTEND_URL || 'https://naurra.ai'}'
               );
             }
             // Auto-close after 3 seconds
@@ -963,6 +963,34 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       // Google Sheets Tools
       {
+        name: 'sheets_create',
+        description: 'Create a new Google Spreadsheet with optional sheet tabs and data. Returns spreadsheet ID and URL.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Spreadsheet title' },
+            sheetNames: {
+              type: 'array',
+              description: 'Names of sheets/tabs to create (e.g., ["Executive Summary", "Revenue", "Expenses"]). Defaults to one "Sheet1" tab.',
+              items: { type: 'string' }
+            },
+            data: {
+              type: 'object',
+              description: 'Optional data to populate sheets. Keys are sheet names, values are 2D arrays of rows. Example: {"Revenue": [["Month","Amount"],["Jan","$100K"]]}',
+              additionalProperties: {
+                type: 'array',
+                items: {
+                  type: 'array',
+                  items: { type: 'string' }
+                }
+              }
+            },
+            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+          },
+          required: ['title']
+        }
+      },
+      {
         name: 'sheets_read',
         description: 'Read data from a Google Sheet',
         inputSchema: {
@@ -977,15 +1005,15 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'sheets_write',
-        description: 'Write data to a Google Sheet',
+        description: 'Write data to a Google Sheet. Supports formulas (e.g., =SUM(A1:A5)) and auto-formats numbers/dates.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'Range to write (e.g., "Sheet1!A1")' },
+            range: { type: 'string', description: 'Range to write (e.g., "Sheet1!A1" or "Revenue!A1:D10")' },
             values: {
               type: 'array',
-              description: 'Array of rows to write (e.g., [["A1", "B1"], ["A2", "B2"]])',
+              description: 'Array of rows to write (e.g., [["Name", "Amount"], ["Revenue", "=SUM(B2:B5)"]])',
               items: {
                 type: 'array',
                 items: {
@@ -993,9 +1021,37 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
               }
             },
+            raw: { type: 'boolean', description: 'If true, writes raw text without parsing formulas. Default false (formulas like =SUM are evaluated).', default: false },
             userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
           },
           required: ['spreadsheetId', 'range', 'values']
+        }
+      },
+      {
+        name: 'sheets_add_sheet',
+        description: 'Add a new sheet tab to an existing Google Spreadsheet',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
+            sheetName: { type: 'string', description: 'Name for the new sheet tab' },
+            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+          },
+          required: ['spreadsheetId', 'sheetName']
+        }
+      },
+      // Google Drive - Folder Creation
+      {
+        name: 'drive_create_folder',
+        description: 'Create a new folder in Google Drive. Optionally place it inside a parent folder.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Folder name' },
+            parentFolderId: { type: 'string', description: 'Optional parent folder ID to nest inside' },
+            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+          },
+          required: ['name']
         }
       }
     ]
@@ -1240,18 +1296,112 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case 'sheets_create': {
+        const sheets = google.sheets({ version: 'v4', auth });
+        const sheetNames: string[] = (args as any).sheetNames || ['Sheet1'];
+        const data: Record<string, string[][]> = (args as any).data || {};
+
+        // Build sheet properties for each tab
+        const sheetsConfig = sheetNames.map((name: string, index: number) => ({
+          properties: {
+            title: name,
+            index: index
+          }
+        }));
+
+        // Create the spreadsheet with all tabs
+        const createResponse = await sheets.spreadsheets.create({
+          requestBody: {
+            properties: { title: (args as any).title },
+            sheets: sheetsConfig
+          }
+        });
+
+        const spreadsheetId = createResponse.data.spreadsheetId!;
+        const url = createResponse.data.spreadsheetUrl;
+
+        // Populate data for each sheet that has data provided
+        const writeResults: string[] = [];
+        for (const [sheetName, rows] of Object.entries(data)) {
+          if (rows && rows.length > 0) {
+            try {
+              const writeResponse = await sheets.spreadsheets.values.update({
+                spreadsheetId,
+                range: `'${sheetName}'!A1`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: rows }
+              });
+              writeResults.push(`${sheetName}: ${writeResponse.data.updatedCells} cells`);
+            } catch (writeError: any) {
+              writeResults.push(`${sheetName}: write failed - ${writeError.message}`);
+            }
+          }
+        }
+
+        const summary = [
+          `Spreadsheet created: "${(args as any).title}"`,
+          `ID: ${spreadsheetId}`,
+          `URL: ${url}`,
+          `Tabs: ${sheetNames.join(', ')}`,
+          writeResults.length > 0 ? `Data written: ${writeResults.join('; ')}` : ''
+        ].filter(Boolean).join('\n');
+
+        return {
+          content: [{ type: 'text', text: summary }]
+        };
+      }
+
       case 'sheets_write': {
         const sheets = google.sheets({ version: 'v4', auth });
+        const valueInputOption = (args as any).raw ? 'RAW' : 'USER_ENTERED';
         const response = await sheets.spreadsheets.values.update({
           spreadsheetId: (args as any).spreadsheetId,
           range: (args as any).range,
-          valueInputOption: 'RAW',
+          valueInputOption,
           requestBody: {
             values: (args as any).values
           }
         });
         return {
           content: [{ type: 'text', text: `Updated ${response.data.updatedCells} cells` }]
+        };
+      }
+
+      case 'sheets_add_sheet': {
+        const sheets = google.sheets({ version: 'v4', auth });
+        const response = await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: (args as any).spreadsheetId,
+          requestBody: {
+            requests: [{
+              addSheet: {
+                properties: {
+                  title: (args as any).sheetName
+                }
+              }
+            }]
+          }
+        });
+        const newSheet = response.data.replies?.[0]?.addSheet?.properties;
+        return {
+          content: [{ type: 'text', text: `Added sheet tab "${newSheet?.title}" (ID: ${newSheet?.sheetId})` }]
+        };
+      }
+
+      case 'drive_create_folder': {
+        const drive = google.drive({ version: 'v3', auth });
+        const requestBody: any = {
+          name: (args as any).name,
+          mimeType: 'application/vnd.google-apps.folder'
+        };
+        if ((args as any).parentFolderId) {
+          requestBody.parents = [(args as any).parentFolderId];
+        }
+        const response = await drive.files.create({
+          requestBody,
+          fields: 'id, name, webViewLink'
+        });
+        return {
+          content: [{ type: 'text', text: safeStringify(response.data) }]
         };
       }
 
