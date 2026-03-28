@@ -537,7 +537,8 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             to: { type: 'string', description: 'Recipient email' },
             subject: { type: 'string', description: 'Email subject' },
-            body: { type: 'string', description: 'Email body (plain text)' },
+            body: { type: 'string', description: 'Email body (plain text or HTML)' },
+            isHtml: { type: 'boolean', description: 'Set to true if body contains HTML content (default: auto-detect)', default: false },
             userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
           },
           required: ['to', 'subject', 'body']
@@ -1372,15 +1373,27 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'gmail_send': {
         const gmail = google.gmail({ version: 'v1', auth });
 
-        // Build email with proper UTF-8 MIME headers
+        const body = (args as any).body;
+        const subject = (args as any).subject;
+
+        // Auto-detect HTML if not explicitly set
+        const isHtml = (args as any).isHtml || /<[a-z][\s\S]*>/i.test(body);
+        const contentType = isHtml ? 'text/html; charset=UTF-8' : 'text/plain; charset=UTF-8';
+
+        // RFC 2047 encode subject for non-ASCII characters
+        const encodedSubject = /[^\x20-\x7E]/.test(subject)
+          ? `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`
+          : subject;
+
+        // Build email with proper MIME headers
         const email = [
           `To: ${(args as any).to}`,
-          `Subject: ${(args as any).subject}`,
+          `Subject: ${encodedSubject}`,
           'MIME-Version: 1.0',
-          'Content-Type: text/plain; charset=UTF-8',
-          'Content-Transfer-Encoding: 8bit',
+          `Content-Type: ${contentType}`,
+          'Content-Transfer-Encoding: base64',
           '',
-          (args as any).body
+          Buffer.from(body, 'utf8').toString('base64')
         ].join('\n');
 
         // Encode to base64url format (RFC 4648)
