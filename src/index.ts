@@ -536,7 +536,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       // Gmail Tools
       {
         name: 'gmail_search',
-        description: 'Search emails in Gmail',
+        description: 'Search emails in Gmail. Returns sender, subject, date, and preview snippet for each result — no need to call gmail_read unless you need the full body.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -564,7 +564,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'gmail_read',
-        description: 'Read a specific email by ID',
+        description: 'Read the full body of a specific email by ID. Only use this when you need the complete email content — gmail_search already provides sender, subject, date, and preview.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -1390,14 +1390,59 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Gmail handlers
       case 'gmail_search': {
         const gmail = google.gmail({ version: 'v1', auth });
-        const response = await gmail.users.messages.list({
+        const maxResults = Math.min((args as any).maxResults || 10, 20);
+        const listResponse = await gmail.users.messages.list({
           userId: 'me',
           q: (args as any).query,
-          maxResults: (args as any).maxResults || 10
+          maxResults
         });
-        return {
-          content: [{ type: 'text', text: safeStringify(response.data) }]
-        };
+
+        const messages = listResponse.data.messages || [];
+        if (messages.length === 0) {
+          return { content: [{ type: 'text', text: 'No emails found matching your search.' }] };
+        }
+
+        // Fetch summary metadata for each message in parallel
+        const summaries = await Promise.all(
+          messages.map(async (msg: any) => {
+            try {
+              const detail = await gmail.users.messages.get({
+                userId: 'me',
+                id: msg.id,
+                format: 'metadata',
+                metadataHeaders: ['From', 'To', 'Subject', 'Date']
+              });
+              const headers = detail.data.payload?.headers || [];
+              const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+              return {
+                id: msg.id,
+                threadId: msg.threadId,
+                from: getHeader('From'),
+                to: getHeader('To'),
+                subject: getHeader('Subject'),
+                date: getHeader('Date'),
+                snippet: detail.data.snippet || '',
+                labels: detail.data.labelIds || [],
+                isUnread: (detail.data.labelIds || []).includes('UNREAD')
+              };
+            } catch {
+              return { id: msg.id, error: 'Could not fetch details' };
+            }
+          })
+        );
+
+        const totalEstimate = listResponse.data.resultSizeEstimate || messages.length;
+        let result = `Found ${totalEstimate} email(s). Showing ${summaries.length}:\n\n`;
+        summaries.forEach((s: any, i: number) => {
+          if (s.error) { result += `${i + 1}. [Error fetching email ${s.id}]\n`; return; }
+          result += `${i + 1}. ${s.isUnread ? '🔵 ' : ''}**${s.subject || '(no subject)'}**\n`;
+          result += `   From: ${s.from}\n`;
+          result += `   Date: ${s.date}\n`;
+          result += `   Preview: ${s.snippet}\n`;
+          result += `   ID: ${s.id}\n\n`;
+        });
+
+        return { content: [{ type: 'text', text: result }] };
       }
 
       case 'gmail_send': {
@@ -1447,11 +1492,64 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         const gmail = google.gmail({ version: 'v1', auth });
         const response = await gmail.users.messages.get({
           userId: 'me',
-          id: (args as any).messageId
+          id: (args as any).messageId,
+          format: 'full'
         });
-        return {
-          content: [{ type: 'text', text: safeStringify(response.data) }]
+
+        const headers = response.data.payload?.headers || [];
+        const getHeader = (name: string) => headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || '';
+
+        // Extract plain text body from MIME parts
+        const extractBody = (payload: any, maxLen = 3000): string => {
+          // Direct body
+          if (payload.body?.data) {
+            const decoded = Buffer.from(payload.body.data, 'base64url').toString('utf-8');
+            // Prefer plain text; strip HTML tags as fallback
+            if (payload.mimeType === 'text/plain') return decoded.slice(0, maxLen);
+            if (payload.mimeType === 'text/html') {
+              const stripped = decoded.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/&nbsp;/gi, ' ')
+                .replace(/&amp;/gi, '&')
+                .replace(/&lt;/gi, '<')
+                .replace(/&gt;/gi, '>')
+                .replace(/&#\d+;/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              return stripped.slice(0, maxLen);
+            }
+          }
+          // Multipart — recurse, prefer text/plain
+          if (payload.parts) {
+            const plainPart = payload.parts.find((p: any) => p.mimeType === 'text/plain');
+            if (plainPart) return extractBody(plainPart, maxLen);
+            const htmlPart = payload.parts.find((p: any) => p.mimeType === 'text/html');
+            if (htmlPart) return extractBody(htmlPart, maxLen);
+            // Nested multipart
+            for (const part of payload.parts) {
+              if (part.parts) {
+                const nested = extractBody(part, maxLen);
+                if (nested) return nested;
+              }
+            }
+          }
+          return '';
         };
+
+        const body = extractBody(response.data.payload);
+        const attachments = (response.data.payload?.parts || [])
+          .filter((p: any) => p.filename && p.filename.length > 0)
+          .map((p: any) => p.filename);
+
+        let result = `**${getHeader('Subject') || '(no subject)'}**\n`;
+        result += `From: ${getHeader('From')}\n`;
+        result += `To: ${getHeader('To')}\n`;
+        result += `Date: ${getHeader('Date')}\n`;
+        if (attachments.length > 0) result += `Attachments: ${attachments.join(', ')}\n`;
+        result += `\n${body}`;
+        if (body.length >= 3000) result += '\n\n[...email truncated]';
+
+        return { content: [{ type: 'text', text: result }] };
       }
 
       // Google Drive handlers - USE SMART SEARCH
