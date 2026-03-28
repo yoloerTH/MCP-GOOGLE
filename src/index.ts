@@ -226,9 +226,27 @@ async function smartDriveSearch(auth: any, query: string, maxResults: number = 1
   }
 
   // Strategy 2: Extract search term and try case-insensitive contains
-  const searchTermMatch = query.match(/name contains ['"](.+?)['"]/i);
-  if (searchTermMatch) {
-    const term = searchTermMatch[1];
+  // If query has Drive API syntax, extract the term; otherwise treat the whole query as the search term
+  const searchTermMatch = query.match(/name contains ['"](.+?)['"]/i) || query.match(/name\s*=\s*['"](.+?)['"]/i);
+  const isRawQuery = !searchTermMatch && !query.includes('mimeType') && !query.includes('modifiedTime') && !query.includes('trashed');
+  const term = searchTermMatch ? searchTermMatch[1] : (isRawQuery ? query.trim() : null);
+  if (term) {
+    // If the original query was a raw filename, try the proper Drive API syntax first
+    if (isRawQuery) {
+      try {
+        const results = await drive.files.list({
+          q: `name contains '${term}'`,
+          pageSize: maxResults,
+          fields: 'files(id, name, mimeType, modifiedTime, webViewLink, owners)'
+        });
+        if (results.data.files && results.data.files.length > 0) {
+          console.log(`✅ Strategy 1b (raw query -> name contains) found ${results.data.files.length} results`);
+          return results.data.files;
+        }
+      } catch (error: any) {
+        console.warn('Strategy 1b (raw -> contains) failed:', error.message);
+      }
+    }
     console.log(`📝 Extracted search term: "${term}"`);
 
     // Try lowercase
