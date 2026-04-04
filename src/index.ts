@@ -533,753 +533,766 @@ const mcpServer = new Server(
 mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
-      // Gmail Tools
+      // ========================================
+      // GMAIL TOOLS
+      // ========================================
       {
         name: 'gmail_search',
-        description: 'Search emails in Gmail. Returns sender, subject, date, and preview snippet for each result — no need to call gmail_read unless you need the full body.',
+        description: 'Search emails in Gmail. Returns sender, subject, date, snippet, and message ID for each result. Use Gmail search syntax for the query. Only call gmail_read if you need the full email body — this tool already returns enough for most tasks. If no results found, try broader terms or alternative keywords before telling the user "not found".',
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Search query (e.g., "from:user@example.com subject:important")' },
-            maxResults: { type: 'number', description: 'Maximum results (default: 10)', default: 10 },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            query: { type: 'string', description: 'Gmail search syntax. Examples: "from:user@example.com", "subject:report is:unread", "after:2026/01/01 has:attachment", "in:sent to:sarah"' },
+            maxResults: { type: 'number', description: 'Maximum results to return (default: 10, max: 20)', default: 10 },
+            userId: { type: 'string', description: 'Authenticated user ID (required — never omit or use placeholder values)' }
           },
-          required: ['query']
+          required: ['query', 'userId']
         }
       },
       {
         name: 'gmail_send',
-        description: 'Send an email via Gmail',
+        description: 'Send an email via Gmail. IMPORTANT RULES: (1) Body MUST be HTML — use <p>, <b>, <ul><li>, <br>, <a href>, <h2> tags. NEVER use markdown (**, ##, ```) in the body — it renders as raw text. (2) Write professional, complete sentences — not compressed bullet-telegram style. (3) Sign with the user\'s real name and title from their profile. NEVER fabricate contact details (no placeholder phone/email). (4) Do NOT include MIME headers in the body — the tool handles that. (5) Send the body content exactly once — never duplicate it. The server auto-detects HTML tags; set isHtml=true to force HTML mode.',
         inputSchema: {
           type: 'object',
           properties: {
-            to: { type: 'string', description: 'Recipient email' },
-            subject: { type: 'string', description: 'Email subject' },
-            body: { type: 'string', description: 'Email body (plain text or HTML)' },
-            isHtml: { type: 'boolean', description: 'Set to true if body contains HTML content (default: auto-detect)', default: false },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            to: { type: 'string', description: 'Recipient email address' },
+            subject: { type: 'string', description: 'Email subject line (non-ASCII characters are auto-encoded)' },
+            body: { type: 'string', description: 'Email body in HTML. Use tags: <p> paragraphs, <b> bold, <i> italic, <ul><li> lists, <a href="url">text</a> links, <br> line breaks, <h2> headings, <hr> dividers. Example: <p>Hi Sarah,</p><p>Key highlights:</p><ul><li>Revenue grew 10%</li></ul>' },
+            isHtml: { type: 'boolean', description: 'Force HTML mode (default: auto-detect from body content)', default: false },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['to', 'subject', 'body']
+          required: ['to', 'subject', 'body', 'userId']
         }
       },
       {
         name: 'gmail_read',
-        description: 'Read the full body of a specific email by ID. Only use this when you need the complete email content — gmail_search already provides sender, subject, date, and preview.',
+        description: 'Read the full body of a specific email by its message ID (from gmail_search results). Only use this when you need the complete email content — gmail_search already provides sender, subject, date, and a preview snippet.',
         inputSchema: {
           type: 'object',
           properties: {
-            messageId: { type: 'string', description: 'Gmail message ID' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            messageId: { type: 'string', description: 'Gmail message ID (obtained from gmail_search results)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['messageId']
+          required: ['messageId', 'userId']
         }
       },
-      // Google Drive Tools
+
+      // ========================================
+      // GOOGLE DRIVE TOOLS
+      // ========================================
       {
         name: 'drive_search',
-        description: 'Search files in Google Drive',
+        description: 'Search files in Google Drive with smart fallback (case-insensitive, partial matching, type-specific). Use Drive API query syntax for best results. If no results, the server automatically tries multiple search strategies. If still empty, try broader terms or check "Shared with me" scope before telling the user "not found" — always show related results if they exist.',
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Search query (e.g., "name contains \'report\'")' },
+            query: { type: 'string', description: 'Drive API query syntax. Examples: "name contains \'Q1 Report\'", "mimeType=\'application/vnd.google-apps.spreadsheet\'", "name contains \'budget\' and modifiedTime > \'2026-01-01\'". Raw filenames also work as fallback.' },
             maxResults: { type: 'number', description: 'Maximum results (default: 10)', default: 10 },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['query']
+          required: ['query', 'userId']
         }
       },
       {
         name: 'drive_read',
-        description: 'Read file content from Google Drive',
+        description: 'Read file content from Google Drive by file ID.',
         inputSchema: {
           type: 'object',
           properties: {
             fileId: { type: 'string', description: 'Google Drive file ID' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['fileId']
+          required: ['fileId', 'userId']
         }
       },
       {
         name: 'drive_create',
-        description: 'Create a new file in Google Drive',
+        description: 'Create a new plain file in Google Drive. For Google Docs use docs_create, for Sheets use sheets_create — this tool creates plain text/other file types.',
         inputSchema: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'File name' },
             content: { type: 'string', description: 'File content' },
             mimeType: { type: 'string', description: 'MIME type (default: text/plain)', default: 'text/plain' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['name', 'content']
+          required: ['name', 'content', 'userId']
         }
       },
-      // Google Calendar Tools
       {
-        name: 'calendar_list_events',
-        description: 'List upcoming calendar events',
+        name: 'drive_delete',
+        description: 'Permanently delete a file or folder from Google Drive. This action cannot be undone.',
         inputSchema: {
           type: 'object',
           properties: {
-            maxResults: { type: 'number', description: 'Maximum results (default: 10)', default: 10 },
-            timeMin: { type: 'string', description: 'Start time (ISO format, default: now)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          }
+            fileId: { type: 'string', description: 'File or folder ID to delete' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['fileId', 'userId']
+        }
+      },
+      {
+        name: 'drive_rename',
+        description: 'Rename a file or folder in Google Drive.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            fileId: { type: 'string', description: 'File or folder ID' },
+            newName: { type: 'string', description: 'New name for the file or folder' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['fileId', 'newName', 'userId']
+        }
+      },
+      {
+        name: 'drive_change_permissions',
+        description: 'Share a Google Drive file by granting access to a specific email address. Roles: "reader" (view only), "writer" (can edit), "owner" (transfer ownership). This sends a notification to the recipient.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            fileId: { type: 'string', description: 'File ID to share' },
+            email: { type: 'string', description: 'Email address to share with (use contacts_search to resolve names to emails)' },
+            role: { type: 'string', description: 'Permission role: "reader", "writer", or "owner"', enum: ['reader', 'writer', 'owner'] },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['fileId', 'email', 'role', 'userId']
+        }
+      },
+      {
+        name: 'drive_create_folder',
+        description: 'Create a new folder in Google Drive, optionally nested inside a parent folder.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Folder name' },
+            parentFolderId: { type: 'string', description: 'Parent folder ID to nest inside (optional — omit for root Drive)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['name', 'userId']
+        }
+      },
+
+      // ========================================
+      // GOOGLE CALENDAR TOOLS
+      // ========================================
+      {
+        name: 'calendar_list_events',
+        description: 'List upcoming calendar events from the primary calendar. Use this to check for scheduling conflicts BEFORE creating new events. Shows event title, time, attendees, and Meet links if present.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            maxResults: { type: 'number', description: 'Maximum events to return (default: 10)', default: 10 },
+            timeMin: { type: 'string', description: 'Start time filter in ISO 8601 format (default: now). Use to check a specific day, e.g., "2026-04-05T00:00:00Z"' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['userId']
         }
       },
       {
         name: 'calendar_create_event',
-        description: 'Create a new calendar event',
+        description: 'Create a new calendar event. IMPORTANT: Always check for conflicts first by calling calendar_list_events for the target date/time. If there is a conflict, inform the user and suggest the nearest free slot. For meetings with external attendees, include a polite description. Use meet_schedule instead if a Google Meet link is needed.',
         inputSchema: {
           type: 'object',
           properties: {
             summary: { type: 'string', description: 'Event title' },
-            startTime: { type: 'string', description: 'Start time (ISO format)' },
-            endTime: { type: 'string', description: 'End time (ISO format)' },
-            description: { type: 'string', description: 'Event description' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            startTime: { type: 'string', description: 'Start time in ISO 8601 format (e.g., "2026-04-05T14:00:00+03:00")' },
+            endTime: { type: 'string', description: 'End time in ISO 8601 format' },
+            description: { type: 'string', description: 'Event description (optional)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['summary', 'startTime', 'endTime']
+          required: ['summary', 'startTime', 'endTime', 'userId']
         }
       },
       {
         name: 'calendar_update_event',
-        description: 'Update an existing calendar event (reschedule, change title, description, or location)',
+        description: 'Update an existing calendar event. Only include the fields you want to change — omitted fields stay unchanged.',
         inputSchema: {
           type: 'object',
           properties: {
-            eventId: { type: 'string', description: 'Calendar event ID' },
+            eventId: { type: 'string', description: 'Calendar event ID (from calendar_list_events results)' },
             summary: { type: 'string', description: 'New event title (optional)' },
-            startTime: { type: 'string', description: 'New start time in ISO format (optional)' },
-            endTime: { type: 'string', description: 'New end time in ISO format (optional)' },
-            description: { type: 'string', description: 'New event description (optional)' },
-            location: { type: 'string', description: 'New event location (optional)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            startTime: { type: 'string', description: 'New start time in ISO 8601 format (optional)' },
+            endTime: { type: 'string', description: 'New end time in ISO 8601 format (optional)' },
+            description: { type: 'string', description: 'New description (optional)' },
+            location: { type: 'string', description: 'New location (optional)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['eventId']
+          required: ['eventId', 'userId']
         }
       },
       {
         name: 'calendar_delete_event',
-        description: 'Delete a calendar event',
+        description: 'Delete a calendar event. This cannot be undone.',
         inputSchema: {
           type: 'object',
           properties: {
             eventId: { type: 'string', description: 'Calendar event ID to delete' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['eventId']
+          required: ['eventId', 'userId']
         }
       },
-      // Google Contacts Tools
-      {
-        name: 'contacts_create',
-        description: 'Create a new contact',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            firstName: { type: 'string', description: 'First name' },
-            lastName: { type: 'string', description: 'Last name' },
-            email: { type: 'string', description: 'Email address' },
-            phone: { type: 'string', description: 'Phone number' },
-            address: { type: 'string', description: 'Physical address' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['firstName']
-        }
-      },
+
+      // ========================================
+      // GOOGLE CONTACTS TOOLS
+      // ========================================
       {
         name: 'contacts_search',
-        description: 'Search contacts',
+        description: 'Search contacts by name, email, or phone. Use this to resolve names to email addresses before sending emails or scheduling meetings. If multiple matches found, present the options and ask which one. If no match found, ask the user for the email address.',
         inputSchema: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Search query (name, email, phone)' },
+            query: { type: 'string', description: 'Search query — name, email, or phone number' },
             maxResults: { type: 'number', description: 'Maximum results (default: 10)', default: 10 },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['query']
+          required: ['query', 'userId']
+        }
+      },
+      {
+        name: 'contacts_create',
+        description: 'Create a new contact in Google Contacts.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            firstName: { type: 'string', description: 'First name (required)' },
+            lastName: { type: 'string', description: 'Last name (optional)' },
+            email: { type: 'string', description: 'Email address (optional)' },
+            phone: { type: 'string', description: 'Phone number (optional)' },
+            address: { type: 'string', description: 'Physical address (optional)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['firstName', 'userId']
         }
       },
       {
         name: 'contacts_update',
-        description: 'Update an existing contact',
+        description: 'Update an existing contact. Requires the resourceName from contacts_search results. Only include fields you want to change.',
         inputSchema: {
           type: 'object',
           properties: {
-            resourceName: { type: 'string', description: 'Contact resource name (from search results)' },
+            resourceName: { type: 'string', description: 'Contact resource name (e.g., "people/c12345" — obtained from contacts_search)' },
             firstName: { type: 'string', description: 'New first name (optional)' },
             lastName: { type: 'string', description: 'New last name (optional)' },
             email: { type: 'string', description: 'New email address (optional)' },
             phone: { type: 'string', description: 'New phone number (optional)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['resourceName']
+          required: ['resourceName', 'userId']
         }
       },
       {
         name: 'contacts_delete',
-        description: 'Delete a contact',
+        description: 'Delete a contact. Requires the resourceName from contacts_search.',
         inputSchema: {
           type: 'object',
           properties: {
             resourceName: { type: 'string', description: 'Contact resource name to delete' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['resourceName']
+          required: ['resourceName', 'userId']
         }
       },
-      // Google Tasks Tools
+
+      // ========================================
+      // GOOGLE TASKS TOOLS
+      // ========================================
       {
         name: 'tasks_create',
-        description: 'Create a new task',
+        description: 'Create a new task in Google Tasks. Parse natural language deadlines into ISO dates (e.g., "by Friday" → due date).',
         inputSchema: {
           type: 'object',
           properties: {
-            title: { type: 'string', description: 'Task title' },
-            notes: { type: 'string', description: 'Task notes/details' },
-            due: { type: 'string', description: 'Due date (ISO format)' },
+            title: { type: 'string', description: 'Task title — clear and actionable' },
+            notes: { type: 'string', description: 'Additional details or context (optional)' },
+            due: { type: 'string', description: 'Due date in ISO 8601 format (optional). Parse from natural language: "by Friday", "end of week", "tomorrow"' },
             taskListId: { type: 'string', description: 'Task list ID (default: "@default")', default: '@default' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['title']
+          required: ['title', 'userId']
         }
       },
       {
         name: 'tasks_list',
-        description: 'List tasks from a task list',
+        description: 'List tasks from a task list. When presenting results, sort by due date, highlight overdue items, and group by list if multiple lists exist.',
         inputSchema: {
           type: 'object',
           properties: {
             taskListId: { type: 'string', description: 'Task list ID (default: "@default")', default: '@default' },
             maxResults: { type: 'number', description: 'Maximum results (default: 100)', default: 100 },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['userId']
         }
       },
       {
         name: 'tasks_update',
-        description: 'Update an existing task (rename, change due date, or notes)',
+        description: 'Update an existing task (rename, change due date, or update notes). Only include fields you want to change.',
         inputSchema: {
           type: 'object',
           properties: {
-            taskId: { type: 'string', description: 'Task ID' },
+            taskId: { type: 'string', description: 'Task ID (from tasks_list results)' },
             taskListId: { type: 'string', description: 'Task list ID (default: "@default")', default: '@default' },
             title: { type: 'string', description: 'New task title (optional)' },
-            notes: { type: 'string', description: 'New task notes (optional)' },
+            notes: { type: 'string', description: 'New notes (optional)' },
             due: { type: 'string', description: 'New due date in ISO format (optional)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['taskId']
+          required: ['taskId', 'userId']
         }
       },
       {
         name: 'tasks_complete',
-        description: 'Mark a task as completed',
+        description: 'Mark a task as completed.',
         inputSchema: {
           type: 'object',
           properties: {
             taskId: { type: 'string', description: 'Task ID to complete' },
             taskListId: { type: 'string', description: 'Task list ID (default: "@default")', default: '@default' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['taskId']
+          required: ['taskId', 'userId']
         }
       },
       {
         name: 'tasks_delete',
-        description: 'Delete a task',
+        description: 'Delete a task permanently.',
         inputSchema: {
           type: 'object',
           properties: {
             taskId: { type: 'string', description: 'Task ID to delete' },
             taskListId: { type: 'string', description: 'Task list ID (default: "@default")', default: '@default' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['taskId']
+          required: ['taskId', 'userId']
         }
       },
-      // Drive Extended Tools
-      {
-        name: 'drive_delete',
-        description: 'Delete a file or folder from Google Drive',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            fileId: { type: 'string', description: 'File or folder ID to delete' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['fileId']
-        }
-      },
-      {
-        name: 'drive_rename',
-        description: 'Rename a file or folder in Google Drive',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            fileId: { type: 'string', description: 'File or folder ID' },
-            newName: { type: 'string', description: 'New name' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['fileId', 'newName']
-        }
-      },
-      {
-        name: 'drive_change_permissions',
-        description: 'Change sharing permissions on a Google Drive file',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            fileId: { type: 'string', description: 'File ID' },
-            email: { type: 'string', description: 'Email address to share with' },
-            role: { type: 'string', description: 'Permission role: reader, writer, or owner', enum: ['reader', 'writer', 'owner'] },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['fileId', 'email', 'role']
-        }
-      },
-      // Docs Extended Tools
-      {
-        name: 'docs_delete',
-        description: 'Delete a Google Doc',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID to delete' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId']
-        }
-      },
-      {
-        name: 'docs_append',
-        description: 'Append content to the end of a Google Doc',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            content: { type: 'string', description: 'Content to append' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'content']
-        }
-      },
-      {
-        name: 'docs_format_text',
-        description: 'Format text in a Google Doc (bold, italic, or heading)',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            startIndex: { type: 'number', description: 'Start index of text to format' },
-            endIndex: { type: 'number', description: 'End index of text to format' },
-            bold: { type: 'boolean', description: 'Make text bold' },
-            italic: { type: 'boolean', description: 'Make text italic' },
-            fontSize: { type: 'number', description: 'Font size for heading (e.g., 20 for heading)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'startIndex', 'endIndex']
-        }
-      },
-      // Google Meet Tools
+
+      // ========================================
+      // GOOGLE MEET TOOLS
+      // ========================================
       {
         name: 'meet_schedule',
-        description: 'Schedule a Google Meet meeting',
+        description: 'Schedule a Google Meet meeting — creates a calendar event with a Meet video link. Use contacts_search first to resolve attendee names to email addresses.',
         inputSchema: {
           type: 'object',
           properties: {
             summary: { type: 'string', description: 'Meeting title' },
-            startTime: { type: 'string', description: 'Start time (ISO format)' },
-            endTime: { type: 'string', description: 'End time (ISO format)' },
+            startTime: { type: 'string', description: 'Start time in ISO 8601 format' },
+            endTime: { type: 'string', description: 'End time in ISO 8601 format' },
             attendees: {
               type: 'array',
-              description: 'Array of attendee email addresses',
+              description: 'Email addresses of attendees (resolve names via contacts_search first)',
               items: { type: 'string' }
             },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['summary', 'startTime', 'endTime']
+          required: ['summary', 'startTime', 'endTime', 'userId']
         }
       },
       {
         name: 'meet_get_link',
-        description: 'Get the Google Meet link for an existing calendar event',
+        description: 'Get the Google Meet link for an existing calendar event.',
         inputSchema: {
           type: 'object',
           properties: {
             eventId: { type: 'string', description: 'Calendar event ID' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['eventId']
+          required: ['eventId', 'userId']
         }
       },
       {
         name: 'meet_cancel',
-        description: 'Cancel a Google Meet meeting',
+        description: 'Cancel a Google Meet meeting and automatically notify all attendees.',
         inputSchema: {
           type: 'object',
           properties: {
             eventId: { type: 'string', description: 'Calendar event ID to cancel' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['eventId']
+          required: ['eventId', 'userId']
         }
       },
       {
         name: 'meet_list',
-        description: 'List upcoming Google Meet meetings',
+        description: 'List upcoming calendar events that have Google Meet links attached.',
         inputSchema: {
           type: 'object',
           properties: {
             maxResults: { type: 'number', description: 'Maximum results (default: 10)', default: 10 },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['userId']
         }
       },
       {
         name: 'meet_add_participants',
-        description: 'Add participants to an existing Google Meet meeting',
+        description: 'Add new attendees to an existing meeting and send them invitations.',
         inputSchema: {
           type: 'object',
           properties: {
             eventId: { type: 'string', description: 'Calendar event ID' },
             attendees: {
               type: 'array',
-              description: 'Array of attendee email addresses to add',
+              description: 'Email addresses to add (resolve names via contacts_search first)',
               items: { type: 'string' }
             },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['eventId', 'attendees']
+          required: ['eventId', 'attendees', 'userId']
         }
       },
-      // Google Docs Tools
-      {
-        name: 'docs_read',
-        description: 'Read content from a Google Doc',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Google Docs document ID' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId']
-        }
-      },
+
+      // ========================================
+      // GOOGLE DOCS TOOLS
+      // ========================================
       {
         name: 'docs_create',
-        description: 'Create a new Google Doc',
+        description: 'Create a new Google Doc with optional initial content. Returns document ID and URL.\n\nDOCUMENT CREATION WORKFLOW — follow this order:\n1. CREATE: Use this tool (with optional initial content inserted at index 1)\n2. APPEND: Add remaining content section by section with docs_append — write COMPLETE polished text, every paragraph, every data point. NEVER use placeholder text like "[content here]" or "[insert analysis]".\n3. TABLES: Insert tables with docs_insert_table (use the data parameter to pre-fill)\n4. READ: After ALL content is written, call docs_read to get accurate character indexes\n5. FORMAT: Apply formatting using those indexes — docs_set_heading, docs_format_text, docs_insert_list, docs_insert_link\n\nCRITICAL: Never use markdown syntax (**, ##, ```). Google Docs renders markdown as raw text. Use the formatting tools instead. Write all content BEFORE formatting — indexes shift with every append.',
         inputSchema: {
           type: 'object',
           properties: {
             title: { type: 'string', description: 'Document title' },
-            content: { type: 'string', description: 'Document content' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            content: { type: 'string', description: 'Initial content to insert (plain text — no markdown). Optional.' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['title']
+          required: ['title', 'userId']
         }
       },
-      // Google Sheets Tools
+      {
+        name: 'docs_read',
+        description: 'Read a Google Doc\'s full content with character indexes for every element. Call this AFTER all content is written and BEFORE formatting. The response includes startIndex and endIndex for each paragraph — use these exact values with docs_format_text, docs_set_heading, docs_insert_list, and docs_insert_link. If editing an existing doc, always read first to understand its current layout.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Google Docs document ID' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'userId']
+        }
+      },
+      {
+        name: 'docs_append',
+        description: 'Append text to the end of a Google Doc. A newline is automatically prepended. Write complete, polished text — never placeholders. Use \\n\\n between sections for visual spacing. Do NOT use markdown syntax — it appears as raw characters in the doc. Append all content before formatting (indexes shift with each append).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            content: { type: 'string', description: 'Text content to append (plain text — no markdown). Write full paragraphs, real analysis, specific numbers.' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'content', 'userId']
+        }
+      },
+      {
+        name: 'docs_delete',
+        description: 'Permanently delete a Google Doc. This cannot be undone.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID to delete' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'userId']
+        }
+      },
+      {
+        name: 'docs_format_text',
+        description: 'Apply text formatting (bold, italic, font size) to a character range in a Google Doc. Get accurate indexes from docs_read AFTER all content is written. Bold key metrics, numbers, and names — not entire sentences or paragraphs. Can combine multiple formats in one call.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            startIndex: { type: 'number', description: 'Start character index (from docs_read)' },
+            endIndex: { type: 'number', description: 'End character index (from docs_read)' },
+            bold: { type: 'boolean', description: 'Make text bold (for key terms, metrics, names)' },
+            italic: { type: 'boolean', description: 'Make text italic (for dates, secondary context)' },
+            fontSize: { type: 'number', description: 'Font size in points (e.g., 11 for body, 14 for emphasis)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'startIndex', 'endIndex', 'userId']
+        }
+      },
+      {
+        name: 'docs_set_heading',
+        description: 'Apply heading/paragraph styles to a range. Get indexes from docs_read. Use proper hierarchy: TITLE (once at top), HEADING_1 (major sections like "Executive Summary", "Key Findings"), HEADING_2 (subsections), HEADING_3 (sparingly for tertiary breakdowns). A professional report should have clear heading structure.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            startIndex: { type: 'number', description: 'Start character index (from docs_read)' },
+            endIndex: { type: 'number', description: 'End character index (from docs_read)' },
+            headingType: { type: 'string', description: 'Style to apply: "TITLE", "SUBTITLE", "HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6", "NORMAL_TEXT"' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'startIndex', 'endIndex', 'headingType', 'userId']
+        }
+      },
+      {
+        name: 'docs_insert_table',
+        description: 'Insert a table into a Google Doc, optionally pre-populated with data. Use the data parameter to fill cells in one call — more efficient than inserting empty then writing. The server re-reads the doc after inserting the table to get accurate cell indexes and populates cells in reverse order to preserve positions. Use tables for any structured or comparative data (metrics, KPIs, timelines, action items).',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            rows: { type: 'number', description: 'Number of rows (including header)' },
+            columns: { type: 'number', description: 'Number of columns' },
+            index: { type: 'number', description: 'Insert position (character index). Defaults to end of document.' },
+            data: { type: 'array', description: 'Pre-fill data as 2D array. Example: [["Metric","Value","Status"],["Revenue","$3.4M","On Track"],["Churn","2.1%","At Risk"]]', items: { type: 'array', items: { type: 'string' } } },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'rows', 'columns', 'userId']
+        }
+      },
+      {
+        name: 'docs_insert_link',
+        description: 'Add a hyperlink to an existing text range in a Google Doc. Get indexes from docs_read.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            startIndex: { type: 'number', description: 'Start character index of text to hyperlink' },
+            endIndex: { type: 'number', description: 'End character index' },
+            url: { type: 'string', description: 'URL to link to' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'startIndex', 'endIndex', 'url', 'userId']
+        }
+      },
+      {
+        name: 'docs_insert_list',
+        description: 'Apply bullet or numbered list formatting to paragraphs in a range. Get indexes from docs_read. Use NUMBERED for action items, recommendations, sequential steps. Use BULLET for findings, features, non-sequential items.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            documentId: { type: 'string', description: 'Document ID' },
+            startIndex: { type: 'number', description: 'Start character index of the range' },
+            endIndex: { type: 'number', description: 'End character index' },
+            listType: { type: 'string', description: '"BULLET" (disc/circle/square) or "NUMBERED" (decimal/alpha/roman)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
+          },
+          required: ['documentId', 'startIndex', 'endIndex', 'listType', 'userId']
+        }
+      },
+
+      // ========================================
+      // GOOGLE SHEETS TOOLS
+      // ========================================
       {
         name: 'sheets_create',
-        description: 'Create a new Google Spreadsheet with optional sheet tabs and data. Returns spreadsheet ID and URL.',
+        description: 'Create a new Google Spreadsheet with multiple tabs and data in one call.\n\nSPREADSHEET CREATION WORKFLOW:\n1. PLAN: Determine columns (numeric vs text), row layout, where headers/data/totals go, and what formulas are needed\n2. CREATE: Use this tool with sheetNames and data. Write ALL numeric values as raw numbers (1250000 not "$1.25M", 0.18 not "18%") — text strings in numeric cells cause #VALUE! errors. Formulas (=SUM, =AVERAGE) are auto-evaluated.\n3. VERIFY: After creation, call sheets_read on each tab to check for #DIV/0!, #VALUE!, #REF!, #ERROR! — fix any errors with sheets_write before proceeding\n4. FORMAT: Apply formatting in order: sheets_freeze (headers) → sheets_format_cells (bold headers, number formats like currency/percent) → sheets_auto_resize → sheets_banding → sheets_conditional_format → sheets_add_chart\n\nFORMULA RULES: Only derived values get formulas. Wrap division in IFERROR: =IFERROR(B4/B2,0). Cell refs must match actual layout. Never create circular references. Cross-tab refs: =\'Other Tab\'!B5. Write data BEFORE formulas that reference it.\n\nThe server auto-validates data after writing and warns about errors in the response.',
         inputSchema: {
           type: 'object',
           properties: {
             title: { type: 'string', description: 'Spreadsheet title' },
             sheetNames: {
               type: 'array',
-              description: 'Names of sheets/tabs to create (e.g., ["Executive Summary", "Revenue", "Expenses"]). Defaults to one "Sheet1" tab.',
+              description: 'Tab names to create (e.g., ["Overview", "Revenue", "Expenses"]). Defaults to ["Sheet1"].',
               items: { type: 'string' }
             },
             data: {
               type: 'object',
-              description: 'Optional data to populate sheets. Keys are sheet names, values are 2D arrays of rows. Example: {"Revenue": [["Month","Amount"],["Jan","$100K"]]}',
+              description: 'Data per tab. Keys = tab names, values = 2D arrays. Use raw numbers for numeric data, formulas start with =. Example: {"Overview": [["Category","Amount"],["Revenue","1250000"],["Expenses","980000"],["Profit","=B2-B3"]]}',
               additionalProperties: {
                 type: 'array',
-                items: {
-                  type: 'array',
-                  items: { type: 'string' }
-                }
+                items: { type: 'array', items: { type: 'string' } }
               }
             },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['title']
+          required: ['title', 'userId']
         }
       },
       {
         name: 'sheets_read',
-        description: 'Read data from a Google Sheet',
+        description: 'Read data from a spreadsheet range. IMPORTANT: Call sheets_get_metadata first to discover actual tab names — guessing tab names causes "Unable to parse range" errors. Tab names with spaces must be wrapped in single quotes in the range (e.g., "\'My Tab\'!A1:D10"). Use this after writing data to verify no formula errors exist (#DIV/0!, #VALUE!, #REF!, #ERROR!).',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'Range to read (e.g., "Sheet1!A1:D10")', default: 'Sheet1' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            range: { type: 'string', description: 'A1 notation range. Examples: "Sheet1", "Sheet1!A1:D10", "\'Revenue Data\'!A1:Z100". Default: "Sheet1"' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId']
+          required: ['spreadsheetId', 'userId']
         }
       },
       {
         name: 'sheets_write',
-        description: 'Write data to a Google Sheet. Supports formulas (e.g., =SUM(A1:A5)) and auto-formats numbers/dates.',
+        description: 'Write data to cells in a Google Sheet. Supports formulas when raw=false (default).\n\nCRITICAL RULES:\n- NUMERIC VALUES: Write raw numbers only. 1250000 not "$1.25M". 0.18 not "18%". Text-as-number causes #VALUE! errors in formulas. Apply visual formatting (currency, percent) with sheets_format_cells AFTER writing.\n- FORMULAS: Must be valid arithmetic. Use IFERROR for all division: =IFERROR(B4/B2,0). Cell refs must match actual layout. Write data BEFORE formulas that depend on it.\n- After writing, call sheets_read to verify no errors. If a cell shows #VALUE!, the referenced cell likely contains text instead of a number — overwrite it with raw=false.\n\nThe server auto-validates values and warns about common mistakes (currency symbols, percent signs in numeric data).',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'Range to write (e.g., "Sheet1!A1" or "Revenue!A1:D10")' },
+            range: { type: 'string', description: 'A1 notation range. Examples: "Sheet1!A1", "\'Revenue\'!A1:D10". Tab names with spaces need single quotes.' },
             values: {
               type: 'array',
-              description: 'Array of rows to write (e.g., [["Name", "Amount"], ["Revenue", "=SUM(B2:B5)"]])',
-              items: {
-                type: 'array',
-                items: {
-                  type: 'string'
-                }
-              }
+              description: '2D array of rows. Use raw numbers for numeric data (1250000, 0.18), formulas start with = (=SUM(B2:B9), =IFERROR(B4/B2,0))',
+              items: { type: 'array', items: { type: 'string' } }
             },
-            raw: { type: 'boolean', description: 'If true, writes raw text without parsing formulas. Default false (formulas like =SUM are evaluated).', default: false },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            raw: { type: 'boolean', description: 'If true, writes literal text without parsing formulas. Default false — formulas are evaluated, numbers are auto-formatted.', default: false },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'range', 'values']
+          required: ['spreadsheetId', 'range', 'values', 'userId']
         }
       },
       {
         name: 'sheets_get_metadata',
-        description: 'Get spreadsheet metadata: tab names, row/column counts, and basic properties. Use this BEFORE reading specific tabs to discover what tabs exist.',
+        description: 'Get spreadsheet metadata: tab names, row counts, column counts. ALWAYS call this before reading or writing to specific tabs — never guess tab names. Returns the actual names so you can use them in sheets_read/sheets_write ranges.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId']
+          required: ['spreadsheetId', 'userId']
         }
       },
       {
         name: 'sheets_add_sheet',
-        description: 'Add a new sheet tab to an existing Google Spreadsheet',
+        description: 'Add a new tab to an existing spreadsheet.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            sheetName: { type: 'string', description: 'Name for the new sheet tab' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            sheetName: { type: 'string', description: 'Name for the new tab' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'sheetName']
+          required: ['spreadsheetId', 'sheetName', 'userId']
         }
       },
-      // Google Sheets - Formatting Tools
       {
         name: 'sheets_format_cells',
-        description: 'Format cells in a Google Sheet: bold, italic, font size/color, background color, number format (currency/percent/date), alignment, text wrapping. Apply multiple formats in one call.',
+        description: 'Format cells: bold, italic, font size/color, background color, number format, alignment, text wrapping. Apply multiple formats in one call. IMPORTANT: Apply number formats (currency, percent) AFTER writing raw numbers — this controls display without changing the underlying value. Available named colors: red, blue, green, white, black, yellow, orange, purple, gray, pink, cyan, lightblue, lightgreen, lightgray, darkblue, darkgreen, darkred.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'A1 notation range (e.g., "Sheet1!A1:D1" or "Revenue!B2:B20")' },
+            range: { type: 'string', description: 'A1 notation range (e.g., "Sheet1!A1:D1", "Revenue!B2:B20")' },
             bold: { type: 'boolean', description: 'Make text bold' },
             italic: { type: 'boolean', description: 'Make text italic' },
-            fontSize: { type: 'number', description: 'Font size in points (e.g., 12)' },
-            fontColor: { type: 'string', description: 'Font color as hex (#FF0000) or named color (red, blue, green, etc.)' },
-            backgroundColor: { type: 'string', description: 'Cell background color as hex or named color' },
-            numberFormat: { type: 'string', description: 'Number format type: "currency", "percent", "number", "date", "text"' },
-            numberFormatPattern: { type: 'string', description: 'Custom number format pattern (e.g., "$#,##0.00", "0.00%"). Overrides numberFormat.' },
-            horizontalAlignment: { type: 'string', description: 'Text alignment: "LEFT", "CENTER", "RIGHT"' },
-            wrapStrategy: { type: 'string', description: 'Text wrapping: "WRAP", "CLIP", "OVERFLOW_CELL"' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            fontSize: { type: 'number', description: 'Font size in points' },
+            fontColor: { type: 'string', description: 'Font color — hex (#FF0000) or named (red, blue, green, etc.)' },
+            backgroundColor: { type: 'string', description: 'Cell background color — hex or named' },
+            numberFormat: { type: 'string', description: 'Preset format: "currency" ($#,##0.00), "percent" (0.00%), "number" (#,##0.00), "date" (MMM dd, yyyy), "text"' },
+            numberFormatPattern: { type: 'string', description: 'Custom pattern (e.g., "$#,##0", "0.0%", "#,##0.00"). Overrides numberFormat preset.' },
+            horizontalAlignment: { type: 'string', description: '"LEFT", "CENTER", or "RIGHT"' },
+            wrapStrategy: { type: 'string', description: '"WRAP", "CLIP", or "OVERFLOW_CELL"' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'range']
+          required: ['spreadsheetId', 'range', 'userId']
         }
       },
       {
         name: 'sheets_freeze',
-        description: 'Freeze rows and/or columns in a Google Sheet so they stay visible while scrolling.',
+        description: 'Freeze rows and/or columns so they stay visible while scrolling. Typically freeze 1 row for headers (frozenRows: 1).',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
-            frozenRows: { type: 'number', description: 'Number of rows to freeze (e.g., 1 for header row)' },
+            sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' },
+            frozenRows: { type: 'number', description: 'Number of rows to freeze (e.g., 1 for header)' },
             frozenColumns: { type: 'number', description: 'Number of columns to freeze' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId']
+          required: ['spreadsheetId', 'userId']
         }
       },
       {
         name: 'sheets_merge_cells',
-        description: 'Merge a range of cells in a Google Sheet.',
+        description: 'Merge a range of cells into one.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
             range: { type: 'string', description: 'A1 notation range to merge (e.g., "Sheet1!A1:D1")' },
-            mergeType: { type: 'string', description: 'Merge type: "MERGE_ALL" (default), "MERGE_COLUMNS", "MERGE_ROWS"' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            mergeType: { type: 'string', description: '"MERGE_ALL" (default), "MERGE_COLUMNS", or "MERGE_ROWS"' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'range']
+          required: ['spreadsheetId', 'range', 'userId']
         }
       },
       {
         name: 'sheets_set_column_width',
-        description: 'Set the width of columns in a Google Sheet.',
+        description: 'Set column widths in pixels.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
+            sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' },
             startColumn: { type: 'string', description: 'Start column letter (e.g., "A")' },
             endColumn: { type: 'string', description: 'End column letter inclusive (e.g., "C")' },
-            pixelSize: { type: 'number', description: 'Column width in pixels' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            pixelSize: { type: 'number', description: 'Width in pixels' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'startColumn', 'endColumn', 'pixelSize']
+          required: ['spreadsheetId', 'startColumn', 'endColumn', 'pixelSize', 'userId']
         }
       },
       {
         name: 'sheets_auto_resize',
-        description: 'Auto-resize columns to fit their content in a Google Sheet.',
+        description: 'Auto-fit columns to their content width. Call this after all data and formatting is complete.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            sheetName: { type: 'string', description: 'Sheet tab name (defaults to first sheet)' },
+            sheetName: { type: 'string', description: 'Tab name (defaults to first sheet)' },
             startColumn: { type: 'string', description: 'Start column letter (default: "A")' },
             endColumn: { type: 'string', description: 'End column letter (default: "Z")' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId']
+          required: ['spreadsheetId', 'userId']
         }
       },
       {
         name: 'sheets_add_chart',
-        description: 'Insert a chart into a Google Sheet. Supports BAR, LINE, COLUMN, AREA, SCATTER, and PIE chart types.',
+        description: 'Insert a chart into a sheet. Data layout: first column = labels/categories, remaining columns = data series. Chart is placed below the data (600x400px).\n\nCHART TYPE GUIDE: BAR/COLUMN for comparing categories (revenue by region). Use BAR for many items, COLUMN for fewer. LINE for trends over time (monthly revenue). PIE for share-of-total with 6 or fewer slices. AREA for volume trends. SCATTER for correlation between two numeric variables. If no chart type is obviously right, don\'t force one.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            sheetName: { type: 'string', description: 'Sheet tab where data lives (defaults to first sheet)' },
-            chartType: { type: 'string', description: 'Chart type: "BAR", "LINE", "COLUMN", "AREA", "SCATTER", or "PIE"' },
-            dataRange: { type: 'string', description: 'A1 range of chart data (e.g., "A1:B10"). First column = labels, remaining = data series.' },
-            title: { type: 'string', description: 'Chart title' },
-            legendPosition: { type: 'string', description: 'Legend position: "BOTTOM_LEGEND", "LEFT_LEGEND", "RIGHT_LEGEND", "TOP_LEGEND", "NO_LEGEND". Default: "BOTTOM_LEGEND"' },
-            headerCount: { type: 'number', description: 'Number of header rows in data range (default: 1)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            sheetName: { type: 'string', description: 'Tab where data lives (defaults to first sheet)' },
+            chartType: { type: 'string', description: '"BAR", "LINE", "COLUMN", "AREA", "SCATTER", or "PIE"' },
+            dataRange: { type: 'string', description: 'A1 range of chart data (e.g., "A1:B10"). First column = labels.' },
+            title: { type: 'string', description: 'Chart title (optional)' },
+            legendPosition: { type: 'string', description: '"BOTTOM_LEGEND" (default), "LEFT_LEGEND", "RIGHT_LEGEND", "TOP_LEGEND", "NO_LEGEND"' },
+            headerCount: { type: 'number', description: 'Number of header rows in data (default: 1)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'chartType', 'dataRange']
+          required: ['spreadsheetId', 'chartType', 'dataRange', 'userId']
         }
       },
       {
         name: 'sheets_conditional_format',
-        description: 'Add conditional formatting rules to a Google Sheet. Color cells based on their value.',
+        description: 'Add conditional formatting to color cells based on values. Apply where color adds meaning: variance columns (green=positive, red=negative), status columns (green=complete, red=blocked), threshold metrics (red below target, green above). Don\'t over-apply.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'A1 notation range to apply formatting (e.g., "Sheet1!B2:B20")' },
-            ruleType: { type: 'string', description: 'Rule type: "GREATER_THAN", "LESS_THAN", "EQUAL_TO", "TEXT_CONTAINS", "NOT_EMPTY", "CUSTOM_FORMULA"' },
-            values: { type: 'array', description: 'Condition values (e.g., ["100"] for GREATER_THAN, ["=A1>B1"] for CUSTOM_FORMULA). Not required for NOT_EMPTY.', items: { type: 'string' } },
-            backgroundColor: { type: 'string', description: 'Background color for matching cells (hex or named). Default: green' },
-            fontColor: { type: 'string', description: 'Text color for matching cells (hex or named)' },
-            bold: { type: 'boolean', description: 'Bold text for matching cells' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            range: { type: 'string', description: 'A1 notation range (e.g., "Sheet1!D2:D20")' },
+            ruleType: { type: 'string', description: '"GREATER_THAN", "LESS_THAN", "EQUAL_TO", "TEXT_CONTAINS", "NOT_EMPTY", or "CUSTOM_FORMULA"' },
+            values: { type: 'array', description: 'Condition values. Examples: ["100"] for GREATER_THAN, ["Complete"] for EQUAL_TO, ["=A1>B1"] for CUSTOM_FORMULA. Not needed for NOT_EMPTY.', items: { type: 'string' } },
+            backgroundColor: { type: 'string', description: 'Color for matching cells — hex (#00FF00) or named. Default: green' },
+            fontColor: { type: 'string', description: 'Text color for matching cells (optional)' },
+            bold: { type: 'boolean', description: 'Bold text in matching cells (optional)' },
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'range', 'ruleType']
+          required: ['spreadsheetId', 'range', 'ruleType', 'userId']
         }
       },
       {
         name: 'sheets_banding',
-        description: 'Apply alternating row colors (banded rows) to a Google Sheet for better readability.',
+        description: 'Apply alternating row colors for readability. Best applied after all data is written.',
         inputSchema: {
           type: 'object',
           properties: {
             spreadsheetId: { type: 'string', description: 'Google Sheets spreadsheet ID' },
-            range: { type: 'string', description: 'A1 notation range for banding (e.g., "Sheet1!A1:F20")' },
-            headerColor: { type: 'string', description: 'Header row color (hex or named). Default: "#4285F4" (blue)' },
+            range: { type: 'string', description: 'A1 range covering headers + data (e.g., "Sheet1!A1:F20")' },
+            headerColor: { type: 'string', description: 'Header row color. Default: "#4285F4" (Google blue)' },
             firstBandColor: { type: 'string', description: 'First alternating color. Default: "#FFFFFF" (white)' },
             secondBandColor: { type: 'string', description: 'Second alternating color. Default: "#E8F0FE" (light blue)' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
+            userId: { type: 'string', description: 'Authenticated user ID (required)' }
           },
-          required: ['spreadsheetId', 'range']
-        }
-      },
-      // Google Docs - Formatting Tools
-      {
-        name: 'docs_insert_table',
-        description: 'Insert a table into a Google Doc, optionally pre-populated with data.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            rows: { type: 'number', description: 'Number of rows' },
-            columns: { type: 'number', description: 'Number of columns' },
-            index: { type: 'number', description: 'Insert position (character index). Defaults to end of document.' },
-            data: { type: 'array', description: 'Optional 2D array to populate the table (e.g., [["Name","Age"],["Alice","30"]])', items: { type: 'array', items: { type: 'string' } } },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'rows', 'columns']
-        }
-      },
-      {
-        name: 'docs_set_heading',
-        description: 'Apply heading styles to paragraphs in a Google Doc.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            startIndex: { type: 'number', description: 'Start index of the paragraph(s)' },
-            endIndex: { type: 'number', description: 'End index of the paragraph(s)' },
-            headingType: { type: 'string', description: 'Heading type: "TITLE", "SUBTITLE", "HEADING_1", "HEADING_2", "HEADING_3", "HEADING_4", "HEADING_5", "HEADING_6", "NORMAL_TEXT"' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'startIndex', 'endIndex', 'headingType']
-        }
-      },
-      {
-        name: 'docs_insert_link',
-        description: 'Add a hyperlink to a text range in a Google Doc.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            startIndex: { type: 'number', description: 'Start index of the text to link' },
-            endIndex: { type: 'number', description: 'End index of the text to link' },
-            url: { type: 'string', description: 'The URL to link to' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'startIndex', 'endIndex', 'url']
-        }
-      },
-      {
-        name: 'docs_insert_list',
-        description: 'Apply bullet or numbered list formatting to paragraphs in a Google Doc.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            documentId: { type: 'string', description: 'Document ID' },
-            startIndex: { type: 'number', description: 'Start index of the range to format as list' },
-            endIndex: { type: 'number', description: 'End index of the range' },
-            listType: { type: 'string', description: 'List type: "BULLET" or "NUMBERED"' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['documentId', 'startIndex', 'endIndex', 'listType']
-        }
-      },
-      // Google Drive - Folder Creation
-      {
-        name: 'drive_create_folder',
-        description: 'Create a new folder in Google Drive. Optionally place it inside a parent folder.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Folder name' },
-            parentFolderId: { type: 'string', description: 'Optional parent folder ID to nest inside' },
-            userId: { type: 'string', description: 'User ID for OAuth', default: 'default-user' }
-          },
-          required: ['name']
+          required: ['spreadsheetId', 'range', 'userId']
         }
       }
     ]
@@ -1450,6 +1463,28 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         const body = (args as any).body;
         const subject = (args as any).subject;
+
+        // Detect markdown in email body — emails must use HTML, not markdown
+        const markdownPatterns = [
+          { pattern: /\*\*[^*]+\*\*/, hint: 'Use <b>text</b> instead of **text**' },
+          { pattern: /^#{1,6}\s/m, hint: 'Use <h2>text</h2> instead of ## text' },
+          { pattern: /```[\s\S]*?```/, hint: 'Use <pre><code>text</code></pre> instead of ```text```' },
+          { pattern: /^\s*[-*]\s+\S/m, hint: 'Use <ul><li>text</li></ul> instead of - text' },
+          { pattern: /\[([^\]]+)\]\(([^)]+)\)/, hint: 'Use <a href="url">text</a> instead of [text](url)' },
+        ];
+        const markdownWarnings = markdownPatterns
+          .filter(p => p.pattern.test(body))
+          .map(p => p.hint);
+
+        if (markdownWarnings.length > 0) {
+          return {
+            content: [{
+              type: 'text',
+              text: `⚠️ Email body contains markdown syntax which will appear as raw text in the email. Please rewrite using HTML tags:\n${markdownWarnings.join('\n')}\n\nEmail was NOT sent. Please fix the body and try again.`
+            }],
+            isError: true
+          };
+        }
 
         // Auto-detect HTML if not explicitly set
         const isHtml = (args as any).isHtml || /<[a-z][\s\S]*>/i.test(body);
@@ -1730,8 +1765,24 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
         // Populate data for each sheet that has data provided
         const writeResults: string[] = [];
+        const dataWarnings: string[] = [];
+
         for (const [sheetName, rows] of Object.entries(data)) {
           if (rows && rows.length > 0) {
+            // Pre-write validation: check for text-as-number patterns
+            for (let r = 0; r < rows.length; r++) {
+              if (!Array.isArray(rows[r])) continue;
+              for (let c = 0; c < rows[r].length; c++) {
+                const val = String(rows[r][c] ?? '');
+                if (/^\$[\d,.]+[MKBmkb]?$/.test(val)) {
+                  dataWarnings.push(`"${sheetName}" [row ${r + 1}, col ${c + 1}]: "${val}" is currency text — should be raw number`);
+                }
+                if (/^\d+(\.\d+)?%$/.test(val) && !val.startsWith('=')) {
+                  dataWarnings.push(`"${sheetName}" [row ${r + 1}, col ${c + 1}]: "${val}" is percent text — should be raw decimal (${parseFloat(val) / 100})`);
+                }
+              }
+            }
+
             try {
               const writeResponse = await sheets.spreadsheets.values.update({
                 spreadsheetId,
@@ -1746,12 +1797,41 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
+        // Auto-verify: read back each tab and check for formula errors
+        const errorPatterns = ['#DIV/0!', '#VALUE!', '#REF!', '#ERROR!', '#NAME?', '#NULL!', '#N/A'];
+        const cellErrors: string[] = [];
+
+        for (const [sheetName, rows] of Object.entries(data)) {
+          if (rows && rows.length > 0) {
+            try {
+              const readBack = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range: `'${sheetName}'!A1:Z${rows.length + 5}`
+              });
+              const readValues = readBack.data.values || [];
+              for (let r = 0; r < readValues.length; r++) {
+                for (let c = 0; c < (readValues[r] || []).length; c++) {
+                  const cellVal = String(readValues[r][c] ?? '');
+                  if (errorPatterns.some(err => cellVal.includes(err))) {
+                    const colLetter = String.fromCharCode(65 + c);
+                    cellErrors.push(`"${sheetName}"!${colLetter}${r + 1}: ${cellVal}`);
+                  }
+                }
+              }
+            } catch {
+              // Read-back failed — skip verification for this tab
+            }
+          }
+        }
+
         const summary = [
           `Spreadsheet created: "${(args as any).title}"`,
           `ID: ${spreadsheetId}`,
           `URL: ${url}`,
           `Tabs: ${sheetNames.join(', ')}`,
-          writeResults.length > 0 ? `Data written: ${writeResults.join('; ')}` : ''
+          writeResults.length > 0 ? `Data written: ${writeResults.join('; ')}` : '',
+          cellErrors.length > 0 ? `\n⚠️ FORMULA ERRORS DETECTED (fix with sheets_write before formatting):\n${cellErrors.join('\n')}` : '✅ All cells verified — no formula errors',
+          dataWarnings.length > 0 ? `\n⚠️ DATA WARNINGS:\n${dataWarnings.join('\n')}` : ''
         ].filter(Boolean).join('\n');
 
         return {
@@ -1792,17 +1872,46 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'sheets_write': {
         const sheets = google.sheets({ version: 'v4', auth });
-        const valueInputOption = (args as any).raw ? 'RAW' : 'USER_ENTERED';
+        const values: any[][] = (args as any).values || [];
+        const isRaw = (args as any).raw;
+
+        // Smart validation: detect common data mistakes before writing
+        const warnings: string[] = [];
+        if (!isRaw && values.length > 0) {
+          for (let r = 0; r < values.length; r++) {
+            if (!Array.isArray(values[r])) continue;
+            for (let c = 0; c < values[r].length; c++) {
+              const val = String(values[r][c] ?? '');
+              // Detect currency text like "$1.25M", "$500K", "$1,250,000"
+              if (/^\$[\d,.]+[MKBmkb]?$/.test(val)) {
+                warnings.push(`[row ${r + 1}, col ${c + 1}]: "${val}" is currency text — write raw number (e.g., 1250000) then format with sheets_format_cells numberFormat:"currency"`);
+              }
+              // Detect percent text like "18%", "5.5%"
+              if (/^\d+(\.\d+)?%$/.test(val) && !val.startsWith('=')) {
+                warnings.push(`[row ${r + 1}, col ${c + 1}]: "${val}" is percent text — write raw decimal (e.g., ${parseFloat(val) / 100}) then format with sheets_format_cells numberFormat:"percent"`);
+              }
+              // Detect division formulas missing IFERROR
+              if (/^=(?!IFERROR).*\/(?!0\b)/.test(val) && !val.includes('IFERROR')) {
+                warnings.push(`[row ${r + 1}, col ${c + 1}]: Division formula "${val}" is not wrapped in IFERROR — consider =IFERROR(${val.substring(1)},0) to prevent #DIV/0!`);
+              }
+            }
+          }
+        }
+
+        const valueInputOption = isRaw ? 'RAW' : 'USER_ENTERED';
         const response = await sheets.spreadsheets.values.update({
           spreadsheetId: (args as any).spreadsheetId,
           range: (args as any).range,
           valueInputOption,
-          requestBody: {
-            values: (args as any).values
-          }
+          requestBody: { values }
         });
+
+        let result = `Updated ${response.data.updatedCells} cells in ${(args as any).range}`;
+        if (warnings.length > 0) {
+          result += `\n\n⚠️ DATA WARNINGS (these may cause formula errors):\n${warnings.join('\n')}`;
+        }
         return {
-          content: [{ type: 'text', text: `Updated ${response.data.updatedCells} cells` }]
+          content: [{ type: 'text', text: result }]
         };
       }
 
