@@ -1898,15 +1898,39 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
+        // Auto-fix range to match actual data dimensions
+        // If the AI sends range "Sheet1!A1:H16" but data has 17 rows, Google API rejects it.
+        // Fix: compute the correct end cell from the data and use that instead.
+        let writeRange = (args as any).range as string;
+        if (values.length > 0) {
+          const maxCols = Math.max(...values.map((row: any[]) => Array.isArray(row) ? row.length : 0));
+          const numRows = values.length;
+          // Extract sheet prefix and start cell
+          const rangeMatch = writeRange.match(/^((?:'[^']*'|[^!]+)!)?([A-Z]+)(\d+)/i);
+          if (rangeMatch) {
+            const sheetPrefix = rangeMatch[1] || '';
+            const startCol = rangeMatch[2].toUpperCase();
+            const startRow = parseInt(rangeMatch[3]);
+            // Calculate end column letter
+            const startColIndex = startCol.split('').reduce((acc, ch) => acc * 26 + ch.charCodeAt(0) - 64, 0);
+            const endColIndex = startColIndex + maxCols - 1;
+            let endCol = '';
+            let idx = endColIndex;
+            while (idx > 0) { endCol = String.fromCharCode(((idx - 1) % 26) + 65) + endCol; idx = Math.floor((idx - 1) / 26); }
+            const endRow = startRow + numRows - 1;
+            writeRange = `${sheetPrefix}${startCol}${startRow}:${endCol}${endRow}`;
+          }
+        }
+
         const valueInputOption = isRaw ? 'RAW' : 'USER_ENTERED';
         const response = await sheets.spreadsheets.values.update({
           spreadsheetId: (args as any).spreadsheetId,
-          range: (args as any).range,
+          range: writeRange,
           valueInputOption,
           requestBody: { values }
         });
 
-        let result = `Updated ${response.data.updatedCells} cells in ${(args as any).range}`;
+        let result = `Updated ${response.data.updatedCells} cells in ${writeRange}`;
         if (warnings.length > 0) {
           result += `\n\n⚠️ DATA WARNINGS (these may cause formula errors):\n${warnings.join('\n')}`;
         }
