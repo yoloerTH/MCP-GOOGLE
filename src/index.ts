@@ -1934,6 +1934,39 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (warnings.length > 0) {
           result += `\n\n⚠️ DATA WARNINGS (these may cause formula errors):\n${warnings.join('\n')}`;
         }
+
+        // Auto-verify: read back the written range and check for formula errors
+        const errorPatterns = ['#DIV/0!', '#VALUE!', '#REF!', '#ERROR!', '#NAME?', '#NULL!', '#N/A'];
+        try {
+          const readBack = await sheets.spreadsheets.values.get({
+            spreadsheetId: (args as any).spreadsheetId,
+            range: writeRange
+          });
+          const readValues = readBack.data.values || [];
+          const cellErrors: string[] = [];
+          for (let r = 0; r < readValues.length; r++) {
+            for (let c = 0; c < (readValues[r] || []).length; c++) {
+              const cellVal = String(readValues[r][c] ?? '');
+              if (errorPatterns.some(err => cellVal.includes(err))) {
+                // Calculate the actual cell reference
+                const rangeMatch = writeRange.match(/^((?:'[^']*'|[^!]+)!)?([A-Z]+)(\d+)/i);
+                const startCol = rangeMatch ? rangeMatch[2].toUpperCase() : 'A';
+                const startRow = rangeMatch ? parseInt(rangeMatch[3]) : 1;
+                const colIndex = startCol.split('').reduce((acc, ch) => acc * 26 + ch.charCodeAt(0) - 64, 0) + c;
+                let colLetter = '';
+                let ci = colIndex;
+                while (ci > 0) { colLetter = String.fromCharCode(((ci - 1) % 26) + 65) + colLetter; ci = Math.floor((ci - 1) / 26); }
+                cellErrors.push(`${colLetter}${startRow + r}: ${cellVal}`);
+              }
+            }
+          }
+          if (cellErrors.length > 0) {
+            result += `\n\n⚠️ FORMULA ERRORS DETECTED — fix these before formatting:\n${cellErrors.join('\n')}`;
+          }
+        } catch {
+          // Read-back failed — skip verification
+        }
+
         return {
           content: [{ type: 'text', text: result }]
         };
